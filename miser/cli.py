@@ -17,6 +17,7 @@ def main(argv: list[str] | None = None) -> None:
     audit = subparsers.add_parser("audit", help="Run a free AI spend audit against JSONL LLM logs.")
     audit.add_argument("path", help="Path to a JSONL log file.")
     audit.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
+    audit.add_argument("--explain", action="store_true", help="Show evidence and reasoning for each waste bucket.")
 
     analyze = subparsers.add_parser("analyze", help="Analyze JSONL LLM call logs.")
     analyze.add_argument("path", help="Path to a JSONL log file.")
@@ -34,7 +35,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.json:
             print(json.dumps(report.to_dict(), indent=2))
         else:
-            print(render_audit(report))
+            print(render_audit(report, explain=args.explain))
 
     elif args.command == "analyze":
         calls = load_jsonl(args.path)
