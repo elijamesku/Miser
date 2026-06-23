@@ -101,6 +101,40 @@ func TestCostBasisUsesActualInvoice(t *testing.T) {
 	}
 }
 
+func TestCostBasisUsesProviderBillingAPI(t *testing.T) {
+	report := Audit([]LLMCall{
+		{
+			ID:          "openai_cost_1",
+			Timestamp:   time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			Workflow:    "provider_billing",
+			Provider:    "openai",
+			CostUSD:     20,
+			AccountID:   "codex-local",
+			Integration: "codex",
+			CostBasis:   "provider_billing_api",
+			Metadata:    map[string]interface{}{},
+		},
+	})
+	if report.CostBasis != "provider billing API" {
+		t.Fatalf("unexpected cost basis: %q", report.CostBasis)
+	}
+}
+
+func TestOpenAICostsURL(t *testing.T) {
+	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
+	got, err := openAICostsURL(from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "https://api.openai.com/v1/organization/costs?") {
+		t.Fatalf("unexpected costs URL: %s", got)
+	}
+	if !strings.Contains(got, "bucket_width=1d") || !strings.Contains(got, "group_by=line_item") || !strings.Contains(got, "group_by=project_id") {
+		t.Fatalf("missing expected query params: %s", got)
+	}
+}
+
 func testCall(id, workflow, prompt string, cost float64) LLMCall {
 	return LLMCall{
 		ID:           id,
