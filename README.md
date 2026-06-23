@@ -21,6 +21,7 @@ The invariant:
 This repo currently ships a local CLI that:
 
 - ingests JSONL LLM call logs
+- imports ccusage JSON reports
 - normalizes prompts into repeatable call fingerprints
 - clusters repeated expensive calls
 - estimates monthly waste
@@ -96,6 +97,25 @@ Example:
    Why: Miser found repeated summary prompts after masking IDs and emails. These are strong candidates for exact or semantic caching.
    Confidence: high
    Sample calls: call_001, call_002, call_003, call_004, call_005
+```
+
+## Import ccusage
+
+Miser can use ccusage as the measurement layer for Claude Code, Codex, Gemini CLI, and other coding-agent usage reports.
+
+```bash
+npx ccusage@latest daily --json > ccusage.json
+python3 -m miser import ccusage ccusage.json --out logs.jsonl
+python3 -m miser audit logs.jsonl --explain
+```
+
+Example imported audit finding:
+
+```text
+1. Coding-agent context reconstruction: $20.05
+   Why: ccusage rows show large coding-agent input/cache-read token volume. This often means the agent is re-reading project context instead of using session handoffs, code indexes, or narrower task scopes.
+   Confidence: medium
+   Sample calls: ccusage_0001, ccusage_0002
 ```
 
 ## Log Format
