@@ -146,12 +146,12 @@ func PullOpenAIUsage(opts PullOptions) ([]map[string]interface{}, error) {
 				continue
 			}
 			model := defaultString(result.Model, "unknown")
-			costUSD, priced := estimateOpenAICostUSD(model, result.InputTokens, result.OutputTokens, result.InputCachedTokens)
+			costUSD, pricing, priced := PriceTokenUsage("openai", model, result.InputTokens, result.OutputTokens, result.InputCachedTokens)
 			costBasis := "unpriced_token_usage"
 			pricingSource := "none"
 			if priced {
 				costBasis = "published_token_price"
-				pricingSource = "openai_public_pricing"
+				pricingSource = pricing.Source
 			}
 			rows = append(rows, map[string]interface{}{
 				"id":                  fmt.Sprintf("openai_usage_%04d", rowNumber),
@@ -220,44 +220,6 @@ func usagePrompt(model string, result openAIUsageResult) string {
 		parts = append(parts, fmt.Sprintf("requests=%d", result.NumModelRequests))
 	}
 	return strings.Join(parts, " ")
-}
-
-func estimateOpenAICostUSD(model string, inputTokens, outputTokens, cachedInputTokens int) (float64, bool) {
-	inputPerMillion, cachedPerMillion, outputPerMillion, ok := openAIModelRates(model)
-	if !ok {
-		return 0, false
-	}
-	uncachedInputTokens := inputTokens - cachedInputTokens
-	if uncachedInputTokens < 0 {
-		uncachedInputTokens = 0
-	}
-	return (float64(uncachedInputTokens)/1_000_000)*inputPerMillion +
-		(float64(cachedInputTokens)/1_000_000)*cachedPerMillion +
-		(float64(outputTokens)/1_000_000)*outputPerMillion, true
-}
-
-func openAIModelRates(model string) (float64, float64, float64, bool) {
-	name := strings.ToLower(model)
-	switch {
-	case strings.Contains(name, "gpt-5.5"):
-		return 5.00, 0.50, 30.00, true
-	case strings.Contains(name, "gpt-5.4-mini"):
-		return 0.75, 0.075, 4.50, true
-	case strings.Contains(name, "gpt-5.4"):
-		return 2.50, 0.25, 15.00, true
-	case strings.Contains(name, "gpt-4.1-mini"):
-		return 0.40, 0.10, 1.60, true
-	case strings.Contains(name, "gpt-4.1-nano"):
-		return 0.10, 0.025, 0.40, true
-	case strings.Contains(name, "gpt-4.1"):
-		return 2.00, 0.50, 8.00, true
-	case strings.Contains(name, "gpt-4o-mini"):
-		return 0.15, 0.075, 0.60, true
-	case strings.Contains(name, "gpt-4o"):
-		return 2.50, 1.25, 10.00, true
-	default:
-		return 0, 0, 0, false
-	}
 }
 
 type openAICostsResponse struct {
