@@ -383,6 +383,12 @@ func costBasis(calls []LLMCall) string {
 		if bases["estimated_token_cost"] {
 			return "estimated token cost, not your actual invoice"
 		}
+		if bases["published_token_price"] {
+			return "published token price, not your actual invoice"
+		}
+		if bases["unpriced_token_usage"] {
+			return "unpriced token usage"
+		}
 		if bases["reported_log_cost"] {
 			return "reported log cost"
 		}
