@@ -193,6 +193,33 @@ Cost basis: actual invoice/billing export
 
 That is the number to use when you care about exact account spend.
 
+## Pull OpenAI/Codex Billing
+
+Miser can pull OpenAI organization costs through the OpenAI costs API.
+
+Set an admin API key:
+
+```bash
+export OPENAI_ADMIN_KEY=...
+```
+
+Pull costs:
+
+```bash
+bin/miser pull openai --from 2026-06-01 --to 2026-07-01 --out work/openai_bill.jsonl --account codex-work --integration codex
+bin/miser audit --account codex-work --integration codex work/openai_bill.jsonl
+```
+
+That output uses:
+
+```text
+Cost basis: provider billing API
+```
+
+This is the path to test real OpenAI/Codex API spend.
+
+Claude billing pull is not automatic yet. Use `invoice-csv` for Claude until there is a supported Claude billing API for your account type.
+
 ## Log Format
 
 Miser expects newline-delimited JSON:
