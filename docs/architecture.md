@@ -23,7 +23,16 @@ Minimum useful fields:
 - prompt or prompt hash
 - token counts
 - cost
+- account_id
+- integration
+- cost_basis
 - timestamp
+
+Cost basis matters:
+
+- `actual_invoice`: billing export/invoice. Use this for exact account spend.
+- `reported_log_cost`: request logs with provider-reported cost.
+- `estimated_token_cost`: token/API estimate. Useful, but not an invoice.
 
 ## 2. Audit
 

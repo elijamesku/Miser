@@ -29,6 +29,9 @@ A more realistic target:
 
 - reads JSONL LLM logs
 - imports `ccusage` JSON
+- imports invoice/billing CSV rows for actual spend
+- separates `actual_invoice` from `estimated_token_cost`
+- filters by account and integration
 - fingerprints similar prompts
 - finds obvious waste buckets
 - prints an audit summary
@@ -61,6 +64,7 @@ Example output:
 Miser AI Spend Audit
 
 Monthly spend analyzed: $0.44
+Cost basis: reported log cost
 Estimated avoidable spend: $0.36
 Savings opportunity: 80.6%
 
@@ -118,14 +122,40 @@ Route config:
 bin/miser analyze --routes work/routes.yaml examples/llm_calls.jsonl
 ```
 
+## Accounts And Integrations
+
+Miser needs to know what it is measuring.
+
+Use `--account` when you have multiple Claude/Codex accounts:
+
+```bash
+bin/miser audit --account claude-work logs.jsonl
+bin/miser audit --account claude-personal logs.jsonl
+```
+
+Use `--integration` when you want to split tools:
+
+```bash
+bin/miser audit --integration claude logs.jsonl
+bin/miser audit --integration codex logs.jsonl
+```
+
+The important field is `cost_basis`:
+
+- `actual_invoice`: actual money from a billing export or invoice
+- `reported_log_cost`: cost reported by request logs
+- `estimated_token_cost`: estimated token/API value, not your actual invoice
+
 ## Import ccusage
 
-Miser can use `ccusage` output as input.
+Miser can use `ccusage` output as input. This is useful for Claude Code, Codex, and other coding-agent usage.
+
+Important: `ccusage` is treated as `estimated_token_cost`. It is not proof of what you paid.
 
 ```bash
 npx ccusage@latest daily --json > ccusage.json
-bin/miser import ccusage ccusage.json --out logs.jsonl
-bin/miser audit --explain logs.jsonl
+bin/miser import ccusage ccusage.json --out logs.jsonl --account codex-local --integration codex
+bin/miser audit --explain --account codex-local --integration codex logs.jsonl
 ```
 
 Example finding:
@@ -136,6 +166,32 @@ Example finding:
    Confidence: medium
    Sample calls: ccusage_0001, ccusage_0002
 ```
+
+## Import Actual Spend
+
+To know exactly how much money you spent on a specific Claude account, import a billing export or invoice CSV.
+
+Minimum columns:
+
+```csv
+date,provider,account,description,cost_usd
+2026-06-01,anthropic,claude-work,Claude Team subscription,200.00
+```
+
+Import it:
+
+```bash
+bin/miser import invoice-csv examples/invoice.csv --out work/invoice_logs.jsonl --integration claude
+bin/miser audit --account claude-work --integration claude work/invoice_logs.jsonl
+```
+
+That output uses:
+
+```text
+Cost basis: actual invoice/billing export
+```
+
+That is the number to use when you care about exact account spend.
 
 ## Log Format
 
@@ -152,6 +208,9 @@ Miser expects newline-delimited JSON:
   "input_tokens": 2100,
   "output_tokens": 340,
   "cost_usd": 0.0124,
+  "account_id": "claude-work",
+  "integration": "claude",
+  "cost_basis": "reported_log_cost",
   "latency_ms": 4810,
   "quality_score": 0.98
 }
@@ -181,3 +240,4 @@ The highest-savings workflows are usually boring and repetitive. That is the poi
 - local model fallback
 - generated code/config patches
 - realized savings tracking
+- Anthropic/OpenAI billing importers once stable exports/APIs are available

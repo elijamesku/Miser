@@ -53,7 +53,7 @@ func TestAnalyzeEmitsReceipt(t *testing.T) {
 }
 
 func TestImportCCUsage(t *testing.T) {
-	rows, err := ImportCCUsage("../../examples/ccusage.json")
+	rows, err := ImportCCUsage("../../examples/ccusage.json", ImportOptions{AccountID: "codex-local", Integration: "codex"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +62,42 @@ func TestImportCCUsage(t *testing.T) {
 	}
 	if rows[0]["workflow"] != "coding_agent_usage" || rows[0]["source"] != "ccusage" {
 		t.Fatalf("unexpected row: %#v", rows[0])
+	}
+	if rows[0]["account_id"] != "codex-local" || rows[0]["integration"] != "codex" {
+		t.Fatalf("missing account/integration: %#v", rows[0])
+	}
+	if rows[0]["cost_basis"] != "estimated_token_cost" {
+		t.Fatalf("unexpected cost basis: %#v", rows[0])
+	}
+}
+
+func TestFilterCalls(t *testing.T) {
+	calls := []LLMCall{
+		{ID: "1", AccountID: "claude-work", Integration: "claude"},
+		{ID: "2", AccountID: "codex-local", Integration: "codex"},
+	}
+	filtered := FilterCalls(calls, FilterConfig{AccountID: "claude-work", Integration: "claude"})
+	if len(filtered) != 1 || filtered[0].ID != "1" {
+		t.Fatalf("unexpected filtered calls: %#v", filtered)
+	}
+}
+
+func TestCostBasisUsesActualInvoice(t *testing.T) {
+	report := Audit([]LLMCall{
+		{
+			ID:          "invoice_1",
+			Timestamp:   time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			Workflow:    "billing_invoice",
+			Provider:    "anthropic",
+			CostUSD:     20,
+			AccountID:   "claude-work",
+			Integration: "claude",
+			CostBasis:   "actual_invoice",
+			Metadata:    map[string]interface{}{},
+		},
+	})
+	if report.CostBasis != "actual invoice/billing export" {
+		t.Fatalf("unexpected cost basis: %q", report.CostBasis)
 	}
 }
 

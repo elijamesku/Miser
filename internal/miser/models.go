@@ -16,6 +16,9 @@ type LLMCall struct {
 	InputTokens  int                    `json:"input_tokens"`
 	OutputTokens int                    `json:"output_tokens"`
 	CostUSD      float64                `json:"cost_usd"`
+	AccountID    string                 `json:"account_id,omitempty"`
+	Integration  string                 `json:"integration,omitempty"`
+	CostBasis    string                 `json:"cost_basis,omitempty"`
 	LatencyMS    *int                   `json:"latency_ms,omitempty"`
 	QualityScore *float64               `json:"quality_score,omitempty"`
 	Metadata     map[string]interface{} `json:"-"`
@@ -32,6 +35,9 @@ func (c *LLMCall) UnmarshalJSON(data []byte) error {
 		InputTokens  int      `json:"input_tokens"`
 		OutputTokens int      `json:"output_tokens"`
 		CostUSD      float64  `json:"cost_usd"`
+		AccountID    string   `json:"account_id"`
+		Integration  string   `json:"integration"`
+		CostBasis    string   `json:"cost_basis"`
 		LatencyMS    *int     `json:"latency_ms"`
 		QualityScore *float64 `json:"quality_score"`
 	}
@@ -51,7 +57,7 @@ func (c *LLMCall) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &meta); err != nil {
 		return err
 	}
-	for _, key := range []string{"id", "timestamp", "workflow", "provider", "model", "prompt", "input_tokens", "output_tokens", "cost_usd", "latency_ms", "quality_score"} {
+	for _, key := range []string{"id", "timestamp", "workflow", "provider", "model", "prompt", "input_tokens", "output_tokens", "cost_usd", "account_id", "integration", "cost_basis", "latency_ms", "quality_score"} {
 		delete(meta, key)
 	}
 
@@ -65,6 +71,9 @@ func (c *LLMCall) UnmarshalJSON(data []byte) error {
 		InputTokens:  raw.InputTokens,
 		OutputTokens: raw.OutputTokens,
 		CostUSD:      raw.CostUSD,
+		AccountID:    raw.AccountID,
+		Integration:  raw.Integration,
+		CostBasis:    raw.CostBasis,
 		LatencyMS:    raw.LatencyMS,
 		QualityScore: raw.QualityScore,
 		Metadata:     meta,
