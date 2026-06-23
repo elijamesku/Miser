@@ -18,7 +18,7 @@ The invariant:
 
 ## First MVP
 
-This repo currently ships a local CLI that:
+This repo currently ships a local Go CLI that:
 
 - ingests JSONL LLM call logs
 - imports ccusage JSON reports
@@ -30,10 +30,16 @@ This repo currently ships a local CLI that:
 
 ## Quickstart
 
+Build a local binary:
+
+```bash
+go build -o bin/miser ./cmd/miser
+```
+
 Run a free AI spend audit against the example log:
 
 ```bash
-python3 -m miser audit examples/llm_calls.jsonl
+bin/miser audit examples/llm_calls.jsonl
 ```
 
 Output:
@@ -56,7 +62,7 @@ Top waste:
 For deeper receipts, run:
 
 ```bash
-python3 -m miser analyze examples/llm_calls.jsonl --min-cluster-size 2
+bin/miser analyze --min-cluster-size 2 examples/llm_calls.jsonl
 ```
 
 Output:
@@ -75,19 +81,19 @@ Quality guard: replay_eval >= 0.95
 You can also emit JSON:
 
 ```bash
-python3 -m miser analyze examples/llm_calls.jsonl --json
+bin/miser analyze --json examples/llm_calls.jsonl
 ```
 
 Or generate a reviewable route config:
 
 ```bash
-python3 -m miser analyze examples/llm_calls.jsonl --routes work/routes.yaml
+bin/miser analyze --routes work/routes.yaml examples/llm_calls.jsonl
 ```
 
 To see why Miser flagged each bucket:
 
 ```bash
-python3 -m miser audit examples/llm_calls.jsonl --explain
+bin/miser audit --explain examples/llm_calls.jsonl
 ```
 
 Example:
@@ -96,7 +102,7 @@ Example:
 1. Duplicate summaries: $0.16
    Why: Miser found repeated summary prompts after masking IDs and emails. These are strong candidates for exact or semantic caching.
    Confidence: high
-   Sample calls: call_001, call_002, call_003, call_004, call_005
+   Sample calls: call_017, call_018, call_019, call_001, call_002
 ```
 
 ## Import ccusage
@@ -105,8 +111,8 @@ Miser can use ccusage as the measurement layer for Claude Code, Codex, Gemini CL
 
 ```bash
 npx ccusage@latest daily --json > ccusage.json
-python3 -m miser import ccusage ccusage.json --out logs.jsonl
-python3 -m miser audit logs.jsonl --explain
+bin/miser import ccusage ccusage.json --out logs.jsonl
+bin/miser audit --explain logs.jsonl
 ```
 
 Example imported audit finding:
