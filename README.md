@@ -1,48 +1,61 @@
 # Miser
 
-Miser is an open-source AI spend compiler.
+Miser is a CLI for finding wasted LLM spend.
 
-It observes expensive LLM calls, finds repeated waste, and turns those calls into cheaper executable workflows: cache hits, local models, smaller models, deterministic code, or rules with frontier fallback.
+It reads LLM call logs, groups repeated patterns, and points out places where expensive model calls could probably be replaced with cache, smaller models, local models, rules, or normal code.
 
-```text
-LLM logs -> repeated call clusters -> savings receipts -> routing patches
-```
+This is early. The goal is to make the audit useful first, then make the fixes executable.
 
 ## Why
 
-AI agent spend is becoming the new cloud bill: opaque, dynamic, duplicated, and easy to let run wild. Most tools show where the money went. Miser is built to reduce the bill.
+AI bills get messy fast, especially with agents.
 
-The invariant:
+The first version is focused on answering:
 
-> Miser should only recommend an optimization when it can show lower cost with an explicit quality guard.
+- where is the spend going?
+- what looks repeated?
+- what looks too expensive for the task?
+- what could be cached, routed, or replaced?
+- which workflows might save 80-90% if optimized?
 
-## First MVP
+I do not think Miser should claim 90% savings across an entire company bill. That sounds fake.
 
-This repo currently ships a local Go CLI that:
+A more realistic target:
 
-- ingests JSONL LLM call logs
-- imports ccusage JSON reports
-- normalizes prompts into repeatable call fingerprints
-- clusters repeated expensive calls
-- estimates monthly waste
-- emits a savings receipt
-- suggests a cheaper route: cache, smaller model, local model, or deterministic workflow
+- 25-50% total bill reduction for messy/high-volume AI usage
+- 80-90% savings on specific repetitive workflows
 
-## Quickstart
+## What It Does Now
 
-Build a local binary:
+- reads JSONL LLM logs
+- imports `ccusage` JSON
+- fingerprints similar prompts
+- finds obvious waste buckets
+- prints an audit summary
+- explains why each bucket was flagged
+- generates route suggestions for repeated call clusters
+
+## Install
+
+Build the CLI:
 
 ```bash
 go build -o bin/miser ./cmd/miser
 ```
 
-Run a free AI spend audit against the example log:
+Run tests:
+
+```bash
+go test ./cmd/... ./internal/...
+```
+
+## Audit
 
 ```bash
 bin/miser audit examples/llm_calls.jsonl
 ```
 
-Output:
+Example output:
 
 ```text
 Miser AI Spend Audit
@@ -52,45 +65,14 @@ Estimated avoidable spend: $0.36
 Savings opportunity: 80.6%
 
 Top waste:
-1. Duplicate summaries: $0.16
-2. Repeated long-context calls: $0.07
-3. Oversized PDF prompts: $0.06
-4. Expensive model used for classification: $0.04
-5. Agent retry loops: $0.04
+1. Duplicate summaries: $0.16 (80% workflow savings potential)
+2. Repeated long-context calls: $0.07 (55% workflow savings potential)
+3. Oversized PDF prompts: $0.06 (60% workflow savings potential)
+4. Expensive model used for classification: $0.04 (70% workflow savings potential)
+5. Agent retry loops: $0.04 (85% workflow savings potential)
 ```
 
-For deeper receipts, run:
-
-```bash
-bin/miser analyze --min-cluster-size 2 examples/llm_calls.jsonl
-```
-
-Output:
-
-```text
-Miser found 4 savings candidates
-
-support_ticket_summary
-Current monthly cost: $3.28
-Estimated monthly cost: $0.49
-Estimated savings: $2.79
-Recommended route: semantic_cache -> smaller_model_fallback
-Quality guard: replay_eval >= 0.95
-```
-
-You can also emit JSON:
-
-```bash
-bin/miser analyze --json examples/llm_calls.jsonl
-```
-
-Or generate a reviewable route config:
-
-```bash
-bin/miser analyze --routes work/routes.yaml examples/llm_calls.jsonl
-```
-
-To see why Miser flagged each bucket:
+To see the reasoning:
 
 ```bash
 bin/miser audit --explain examples/llm_calls.jsonl
@@ -99,15 +81,46 @@ bin/miser audit --explain examples/llm_calls.jsonl
 Example:
 
 ```text
-1. Duplicate summaries: $0.16
+1. Duplicate summaries: $0.16 (80% workflow savings potential)
    Why: Miser found repeated summary prompts after masking IDs and emails. These are strong candidates for exact or semantic caching.
    Confidence: high
-   Sample calls: call_017, call_018, call_019, call_001, call_002
+   Sample calls: call_001, call_002, call_003, call_004, call_005
+```
+
+## Analyze
+
+`audit` is the quick summary. `analyze` gives more detailed savings receipts for repeated call clusters.
+
+```bash
+bin/miser analyze --min-cluster-size 2 examples/llm_calls.jsonl
+```
+
+Example:
+
+```text
+support_ticket_summary
+Current monthly cost: $3.28
+Estimated monthly cost: $0.49
+Estimated savings: $2.79
+Recommended route: semantic_cache -> smaller_model_fallback
+Quality guard: replay_eval >= 0.95
+```
+
+JSON:
+
+```bash
+bin/miser analyze --json examples/llm_calls.jsonl
+```
+
+Route config:
+
+```bash
+bin/miser analyze --routes work/routes.yaml examples/llm_calls.jsonl
 ```
 
 ## Import ccusage
 
-Miser can use ccusage as the measurement layer for Claude Code, Codex, Gemini CLI, and other coding-agent usage reports.
+Miser can use `ccusage` output as input.
 
 ```bash
 npx ccusage@latest daily --json > ccusage.json
@@ -115,10 +128,10 @@ bin/miser import ccusage ccusage.json --out logs.jsonl
 bin/miser audit --explain logs.jsonl
 ```
 
-Example imported audit finding:
+Example finding:
 
 ```text
-1. Coding-agent context reconstruction: $20.05
+1. Coding-agent context reconstruction: $20.05 (35% workflow savings potential)
    Why: ccusage rows show large coding-agent input/cache-read token volume. This often means the agent is re-reading project context instead of using session handoffs, code indexes, or narrower task scopes.
    Confidence: medium
    Sample calls: ccusage_0001, ccusage_0002
@@ -144,62 +157,27 @@ Miser expects newline-delimited JSON:
 }
 ```
 
-## The Receipt
+## Savings Model
 
-Every Miser recommendation is shaped as a receipt:
+The big savings come from finding repeated AI work that should not be expensive AI anymore.
 
-```text
-Cluster: support_ticket_summary
-Current route: anthropic/claude-3-5-sonnet
-Monthly calls: 840000
-Current monthly cost: $18,400
-Recommended route: semantic_cache -> claude-3-haiku
-Estimated monthly cost: $4,900
-Estimated savings: $13,500
-Quality guard: replay_eval >= 0.95
-Rollback: enabled
-```
+Examples:
 
-Generated route config:
+- repeated summaries -> cache
+- simple classification -> smaller/local model
+- giant PDF prompts -> chunk/parser/template first
+- retry loops -> better guardrails or deterministic failure handling
+- stable extraction -> code instead of LLM call
 
-```yaml
-routes:
-  - workflow: claim_denial_triage
-    current_route: anthropic/claude-3-5-sonnet
-    primary: local_classifier
-    fallback: frontier_fallback
-    quality_guard: "replay_eval >= 0.95"
-    rollback: enabled
-    approval_required: true
-```
-
-That receipt is the product. Dashboards are copyable. Verified savings are harder.
-
-## Open Source Strategy
-
-Open-source core:
-
-- capture LLM calls
-- generate local savings reports
-- run replay evals
-- emit routing configs
-- integrate with model providers and local models
-
-Paid enterprise layer later:
-
-- hosted control plane
-- SSO/RBAC/audit logs
-- approval workflows
-- private/VPC deployment
-- continuous monitoring
-- cross-team savings intelligence
-- workflow-specific optimization packs
+The highest-savings workflows are usually boring and repetitive. That is the point.
 
 ## Roadmap
 
-- Replay eval runner
-- SDK wrappers for OpenAI, Anthropic, Gemini, LiteLLM
-- Semantic cache adapter
-- Route config generator
-- GitHub PR patch generator for deterministic replacements
-- Domain packs for support ops, PDF extraction, coding agents, legal review, and healthcare RCM
+- better importers
+- HTML report
+- replay evals
+- semantic cache adapter
+- route config generation
+- local model fallback
+- generated code/config patches
+- realized savings tracking
