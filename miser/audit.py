@@ -44,6 +44,7 @@ class AuditReport:
 def audit_calls(calls: list[LLMCall]) -> AuditReport:
     monthly_spend = sum(call.cost_usd for call in calls)
     waste = [
+        _coding_agent_context_waste(calls),
         _repeated_long_context_waste(calls),
         _classification_waste(calls),
         _duplicate_summary_waste(calls),
@@ -85,6 +86,28 @@ def render_audit(report: AuditReport, explain: bool = False) -> str:
                 lines.append(f"   Sample calls: {sample_ids}")
 
     return "\n".join(lines)
+
+
+def _coding_agent_context_waste(calls: list[LLMCall]) -> WasteLine:
+    agent_calls = [call for call in calls if call.metadata.get("source") == "ccusage" or call.workflow == "coding_agent_usage"]
+    total = 0.0
+    samples: list[str] = []
+
+    for call in agent_calls:
+        cache_read_tokens = int(call.metadata.get("cache_read_tokens") or 0)
+        context_heavy = call.input_tokens >= 50_000 or cache_read_tokens >= 25_000
+        if context_heavy:
+            total += call.cost_usd * 0.35
+            if call.id:
+                samples.append(call.id)
+
+    return WasteLine(
+        "Coding-agent context reconstruction",
+        total,
+        "ccusage rows show large coding-agent input/cache-read token volume. This often means the agent is re-reading project context instead of using session handoffs, code indexes, or narrower task scopes.",
+        "medium",
+        samples[:5],
+    )
 
 
 def _repeated_long_context_waste(calls: list[LLMCall]) -> WasteLine:
