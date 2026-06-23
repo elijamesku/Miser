@@ -1,0 +1,24 @@
+{
+  "daily": [
+    {
+      "date": "2026-06-01",
+      "source": "claude",
+      "project": "miser",
+      "model": "claude-3-5-sonnet",
+      "inputTokens": 182000,
+      "outputTokens": 24000,
+      "cacheReadInputTokens": 77000,
+      "totalCost": 31.42
+    },
+    {
+      "date": "2026-06-02",
+      "source": "claude",
+      "project": "miser",
+      "model": "claude-3-5-sonnet",
+      "inputTokens": 149000,
+      "outputTokens": 21000,
+      "cacheReadInputTokens": 64000,
+      "totalCost": 25.87
+    }
+  ]
+}
