@@ -91,6 +91,7 @@ type WasteLine struct {
 
 type AuditReport struct {
 	MonthlySpendAnalyzed    float64     `json:"monthly_spend_analyzed"`
+	CostBasis               string      `json:"cost_basis,omitempty"`
 	EstimatedAvoidableSpend float64     `json:"estimated_avoidable_spend"`
 	SavingsOpportunity      float64     `json:"savings_opportunity"`
 	TopWaste                []WasteLine `json:"top_waste"`
