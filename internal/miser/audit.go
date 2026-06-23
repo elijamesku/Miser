@@ -269,20 +269,34 @@ func appendSample(samples []string, id string) []string {
 }
 
 func isCCUsageAggregate(call LLMCall) bool {
-	source, _ := call.Metadata["source"].(string)
-	return source == "ccusage"
+	return call.CostBasis == "estimated_token_cost" || call.Integration == "ccusage"
 }
 
 func costBasis(calls []LLMCall) string {
 	if len(calls) == 0 {
 		return ""
 	}
+	bases := map[string]bool{}
 	for _, call := range calls {
-		if !isCCUsageAggregate(call) {
+		if call.CostBasis != "" {
+			bases[call.CostBasis] = true
+		}
+	}
+	if len(bases) == 1 {
+		if bases["actual_invoice"] {
+			return "actual invoice/billing export"
+		}
+		if bases["estimated_token_cost"] {
+			return "estimated token cost, not your actual invoice"
+		}
+		if bases["reported_log_cost"] {
 			return "reported log cost"
 		}
 	}
-	return "ccusage estimated token cost, not your actual invoice"
+	if len(bases) > 1 {
+		return "mixed cost basis"
+	}
+	return "reported log cost"
 }
 
 func intFromAny(value interface{}) int {
