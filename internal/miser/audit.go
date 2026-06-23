@@ -286,6 +286,9 @@ func costBasis(calls []LLMCall) string {
 		if bases["actual_invoice"] {
 			return "actual invoice/billing export"
 		}
+		if bases["provider_billing_api"] {
+			return "provider billing API"
+		}
 		if bases["estimated_token_cost"] {
 			return "estimated token cost, not your actual invoice"
 		}
