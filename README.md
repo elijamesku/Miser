@@ -61,13 +61,13 @@ python3 -m miser analyze examples/llm_calls.jsonl --min-cluster-size 2
 Output:
 
 ```text
-Miser found 3 savings candidates
+Miser found 4 savings candidates
 
 support_ticket_summary
-Current monthly cost: $3,219.86
-Estimated monthly cost: $482.98
-Estimated savings: $2,736.88
-Recommended route: semantic_cache -> claude-3-haiku
+Current monthly cost: $3.28
+Estimated monthly cost: $0.49
+Estimated savings: $2.79
+Recommended route: semantic_cache -> smaller_model_fallback
 Quality guard: replay_eval >= 0.95
 ```
 
