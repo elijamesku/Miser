@@ -67,7 +67,11 @@ func RenderAudit(report AuditReport, explain bool) string {
 		return b.String()
 	}
 	for i, line := range report.TopWaste {
-		fmt.Fprintf(&b, "%d. %s: %s\n", i+1, line.Label, dollars(line.EstimatedMonthlyWaste))
+		fmt.Fprintf(&b, "%d. %s: %s", i+1, line.Label, dollars(line.EstimatedMonthlyWaste))
+		if line.WorkflowSavingsRate > 0 {
+			fmt.Fprintf(&b, " (%.0f%% workflow savings potential)", line.WorkflowSavingsRate*100)
+		}
+		fmt.Fprintln(&b)
 		if explain {
 			samples := "none"
 			if len(line.SampleCallIDs) > 0 {
@@ -98,6 +102,7 @@ func codingAgentContextWaste(calls []LLMCall) WasteLine {
 	return WasteLine{
 		Label:                 "Coding-agent context reconstruction",
 		EstimatedMonthlyWaste: total,
+		WorkflowSavingsRate:   0.35,
 		Reason:                "ccusage rows show large coding-agent input/cache-read token volume. This often means the agent is re-reading project context instead of using session handoffs, code indexes, or narrower task scopes.",
 		Confidence:            "medium",
 		SampleCallIDs:         samples,
@@ -125,6 +130,7 @@ func repeatedLongContextWaste(calls []LLMCall) WasteLine {
 	return WasteLine{
 		Label:                 "Repeated long-context calls",
 		EstimatedMonthlyWaste: total,
+		WorkflowSavingsRate:   0.55,
 		Reason:                "The same workflow repeatedly sends large prompts. Miser assumes context can be compressed, cached, or split before model escalation.",
 		Confidence:            "medium",
 		SampleCallIDs:         samples,
@@ -147,6 +153,7 @@ func classificationWaste(calls []LLMCall) WasteLine {
 	return WasteLine{
 		Label:                 "Expensive model used for classification",
 		EstimatedMonthlyWaste: total,
+		WorkflowSavingsRate:   0.70,
 		Reason:                "Classification and triage tasks often route well through local classifiers, smaller models, or rules with frontier fallback.",
 		Confidence:            "high",
 		SampleCallIDs:         samples,
@@ -174,6 +181,7 @@ func duplicateSummaryWaste(calls []LLMCall) WasteLine {
 	return WasteLine{
 		Label:                 "Duplicate summaries",
 		EstimatedMonthlyWaste: total,
+		WorkflowSavingsRate:   0.80,
 		Reason:                "Miser found repeated summary prompts after masking IDs and emails. These are strong candidates for exact or semantic caching.",
 		Confidence:            "high",
 		SampleCallIDs:         samples,
@@ -193,6 +201,7 @@ func retryLoopWaste(calls []LLMCall) WasteLine {
 	return WasteLine{
 		Label:                 "Agent retry loops",
 		EstimatedMonthlyWaste: total,
+		WorkflowSavingsRate:   0.85,
 		Reason:                "Retry attempts are marked in metadata or prompt text. These usually need guardrails, tool-result caching, or deterministic failure handling.",
 		Confidence:            "medium",
 		SampleCallIDs:         samples,
@@ -212,6 +221,7 @@ func oversizedPDFWaste(calls []LLMCall) WasteLine {
 	return WasteLine{
 		Label:                 "Oversized PDF prompts",
 		EstimatedMonthlyWaste: total,
+		WorkflowSavingsRate:   0.60,
 		Reason:                "PDF workflows are sending very large prompts. Extraction should often be chunked, templated, or handled with deterministic parsing before LLM review.",
 		Confidence:            "medium",
 		SampleCallIDs:         samples,
