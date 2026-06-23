@@ -50,6 +50,7 @@ func Audit(calls []LLMCall) AuditReport {
 		EstimatedAvoidableSpend: avoidable,
 		SavingsOpportunity:      savingsOpportunity,
 		TopWaste:                filtered,
+		CostBasis:               costBasis(calls),
 	}
 }
 
@@ -58,6 +59,9 @@ func RenderAudit(report AuditReport, explain bool) string {
 	fmt.Fprintln(&b, "Miser AI Spend Audit")
 	fmt.Fprintln(&b)
 	fmt.Fprintf(&b, "Monthly spend analyzed: %s\n", dollars(report.MonthlySpendAnalyzed))
+	if report.CostBasis != "" {
+		fmt.Fprintf(&b, "Cost basis: %s\n", report.CostBasis)
+	}
 	fmt.Fprintf(&b, "Estimated avoidable spend: %s\n", dollars(report.EstimatedAvoidableSpend))
 	fmt.Fprintf(&b, "Savings opportunity: %.1f%%\n", report.SavingsOpportunity*100)
 	fmt.Fprintln(&b)
@@ -117,8 +121,16 @@ func repeatedLongContextWaste(calls []LLMCall) WasteLine {
 			continue
 		}
 		sum := 0
+		skip := false
 		for _, call := range group {
+			if isCCUsageAggregate(call) {
+				skip = true
+				break
+			}
 			sum += call.InputTokens
+		}
+		if skip {
+			continue
 		}
 		if float64(sum)/float64(len(group)) >= 3000 {
 			for _, call := range group {
@@ -141,6 +153,9 @@ func classificationWaste(calls []LLMCall) WasteLine {
 	total := 0.0
 	var samples []string
 	for _, call := range calls {
+		if isCCUsageAggregate(call) {
+			continue
+		}
 		text := strings.ToLower(call.Workflow + " " + call.Prompt)
 		model := strings.ToLower(call.Model)
 		classification := strings.Contains(text, "classif") || strings.Contains(text, "triage")
@@ -165,6 +180,9 @@ func duplicateSummaryWaste(calls []LLMCall) WasteLine {
 	var samples []string
 	for _, group := range groups(calls) {
 		if len(group) < 3 {
+			continue
+		}
+		if isCCUsageAggregate(group[0]) {
 			continue
 		}
 		sample := strings.ToLower(group[0].Workflow + " " + group[0].Prompt)
@@ -192,6 +210,9 @@ func retryLoopWaste(calls []LLMCall) WasteLine {
 	total := 0.0
 	var samples []string
 	for _, call := range calls {
+		if isCCUsageAggregate(call) {
+			continue
+		}
 		text := strings.ToLower(call.Workflow + " " + call.Prompt)
 		if call.Metadata["retry"] != nil || call.Metadata["is_retry"] != nil || call.Metadata["attempt"] != nil || strings.Contains(text, "retry") || strings.Contains(text, "try again") || strings.Contains(text, "previous attempt failed") {
 			total += call.CostUSD * 0.85
@@ -212,6 +233,9 @@ func oversizedPDFWaste(calls []LLMCall) WasteLine {
 	total := 0.0
 	var samples []string
 	for _, call := range calls {
+		if isCCUsageAggregate(call) {
+			continue
+		}
 		text := strings.ToLower(call.Workflow + " " + call.Prompt)
 		if strings.Contains(text, "pdf") && call.InputTokens >= 6000 {
 			total += call.CostUSD * 0.60
@@ -242,6 +266,23 @@ func appendSample(samples []string, id string) []string {
 		return samples
 	}
 	return append(samples, id)
+}
+
+func isCCUsageAggregate(call LLMCall) bool {
+	source, _ := call.Metadata["source"].(string)
+	return source == "ccusage"
+}
+
+func costBasis(calls []LLMCall) string {
+	if len(calls) == 0 {
+		return ""
+	}
+	for _, call := range calls {
+		if !isCCUsageAggregate(call) {
+			return "reported log cost"
+		}
+	}
+	return "ccusage estimated token cost, not your actual invoice"
 }
 
 func intFromAny(value interface{}) int {
