@@ -185,7 +185,7 @@ func TestOpenAIUsageRowsCanFlagContextReplay(t *testing.T) {
 }
 
 func TestOpenAIModelRatesUsePublishedGPT55Pricing(t *testing.T) {
-	cost, ok := estimateOpenAICostUSD("gpt-5.5", 17794923, 50472, 17386752)
+	cost, _, ok := PriceTokenUsage("openai", "gpt-5.5", 17794923, 50472, 17386752)
 	if !ok {
 		t.Fatal("expected gpt-5.5 to have published pricing")
 	}
@@ -195,7 +195,7 @@ func TestOpenAIModelRatesUsePublishedGPT55Pricing(t *testing.T) {
 }
 
 func TestOpenAIModelRatesRejectUnknownModels(t *testing.T) {
-	cost, ok := estimateOpenAICostUSD("unknown-future-model", 1000000, 1000000, 0)
+	cost, _, ok := PriceTokenUsage("openai", "unknown-future-model", 1000000, 1000000, 0)
 	if ok {
 		t.Fatal("expected unknown model to be unpriced")
 	}
@@ -214,6 +214,46 @@ func TestOpenAIUsageUnmarshalAppliesPublishedPricing(t *testing.T) {
 		t.Fatalf("unexpected cost basis: %s", call.CostBasis)
 	}
 	if fmt.Sprintf("%.6f", call.CostUSD) != "12.248391" {
+		t.Fatalf("unexpected cost: %.6f", call.CostUSD)
+	}
+}
+
+func TestClaudeModelPricingUsesProviderCatalog(t *testing.T) {
+	cost, pricing, ok := PriceTokenUsage("anthropic", "claude-sonnet-4-5", 1000000, 1000000, 0)
+	if !ok {
+		t.Fatal("expected Claude Sonnet to have published pricing")
+	}
+	if pricing.Provider != "anthropic" || pricing.Source != "anthropic_public_pricing" {
+		t.Fatalf("unexpected pricing metadata: %#v", pricing)
+	}
+	if fmt.Sprintf("%.2f", cost) != "18.00" {
+		t.Fatalf("unexpected Claude Sonnet cost: %.6f", cost)
+	}
+}
+
+func TestClaudePricingInfersProviderFromModel(t *testing.T) {
+	cost, pricing, ok := PriceTokenUsage("ccusage", "claude-3-5-sonnet-20241022", 1000000, 1000000, 1000000)
+	if !ok {
+		t.Fatal("expected Claude model to infer Anthropic pricing")
+	}
+	if pricing.Provider != "anthropic" {
+		t.Fatalf("unexpected provider: %#v", pricing)
+	}
+	if fmt.Sprintf("%.2f", cost) != "15.30" {
+		t.Fatalf("unexpected cached Claude Sonnet cost: %.6f", cost)
+	}
+}
+
+func TestCCUsageUnmarshalAppliesClaudePricing(t *testing.T) {
+	raw := []byte(`{"account_id":"claude-work","cache_read_tokens":1000000,"cost_basis":"estimated_token_cost","cost_usd":3.00,"id":"ccusage_0001","input_tokens":1000000,"integration":"claude","model":"claude-3-5-sonnet-20241022","output_tokens":100000,"prompt":"Coding agent usage aggregate.","provider":"ccusage","source":"ccusage","timestamp":"2026-06-03T00:00:00Z","workflow":"coding_agent_usage"}`)
+	var call LLMCall
+	if err := call.UnmarshalJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if call.CostBasis != "published_token_price" {
+		t.Fatalf("unexpected cost basis: %s", call.CostBasis)
+	}
+	if fmt.Sprintf("%.2f", call.CostUSD) != "1.80" {
 		t.Fatalf("unexpected cost: %.6f", call.CostUSD)
 	}
 }
