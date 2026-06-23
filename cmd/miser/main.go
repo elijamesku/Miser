@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/elijamesku/Miser/internal/miser"
 )
@@ -23,6 +24,8 @@ func main() {
 		err = runAnalyze(os.Args[2:])
 	case "import":
 		err = runImport(os.Args[2:])
+	case "pull":
+		err = runPull(os.Args[2:])
 	default:
 		usage()
 		os.Exit(2)
@@ -138,6 +141,66 @@ func runImport(args []string) error {
 	return nil
 }
 
+func runPull(args []string) error {
+	if len(args) < 1 {
+		return fmt.Errorf("usage: miser pull <openai|claude> --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration name]")
+	}
+	provider := args[0]
+	fs := flag.NewFlagSet("pull "+provider, flag.ContinueOnError)
+	fromRaw := fs.String("from", "", "start date, YYYY-MM-DD")
+	toRaw := fs.String("to", "", "end date, YYYY-MM-DD")
+	out := fs.String("out", "", "write pulled billing rows to JSONL")
+	account := fs.String("account", "", "account_id to attach to imported rows")
+	integration := fs.String("integration", "", "integration name to attach to imported rows")
+	apiKeyEnv := fs.String("api-key-env", "OPENAI_ADMIN_KEY", "environment variable containing provider admin API key")
+	if err := fs.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *fromRaw == "" || *toRaw == "" || *out == "" {
+		return fmt.Errorf("usage: miser pull <openai|claude> --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration name]")
+	}
+	from, err := parseDate(*fromRaw)
+	if err != nil {
+		return err
+	}
+	to, err := parseDate(*toRaw)
+	if err != nil {
+		return err
+	}
+
+	var rows []map[string]interface{}
+	switch provider {
+	case "openai":
+		rows, err = miser.PullOpenAICosts(miser.PullOptions{
+			AccountID:   *account,
+			Integration: defaultString(*integration, "codex"),
+			From:        from,
+			To:          to,
+			APIKey:      os.Getenv(*apiKeyEnv),
+		})
+	case "claude":
+		return fmt.Errorf("claude billing pull is not available yet; import a Claude invoice/billing CSV with `miser import invoice-csv ... --integration claude`")
+	default:
+		return fmt.Errorf("unknown pull provider %q; expected openai or claude", provider)
+	}
+	if err != nil {
+		return err
+	}
+	if err := miser.WriteJSONL(rows, *out); err != nil {
+		return err
+	}
+	fmt.Printf("Pulled %d %s billing rows into %s\n", len(rows), provider, *out)
+	return nil
+}
+
+func parseDate(value string) (time.Time, error) {
+	parsed, err := time.Parse("2006-01-02", value)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("invalid date %q; use YYYY-MM-DD", value)
+	}
+	return parsed.UTC(), nil
+}
+
 func parseImportArgs(args []string) (string, string, miser.ImportOptions, error) {
 	var path string
 	var out string
@@ -178,4 +241,12 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  miser analyze [--json] [--routes routes.yaml] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser import ccusage ccusage.json --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser import invoice-csv invoice.csv --out logs.jsonl [--account id] [--integration claude|codex]")
+	fmt.Fprintln(os.Stderr, "  miser pull openai --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration codex]")
+}
+
+func defaultString(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
