@@ -143,7 +143,7 @@ func runImport(args []string) error {
 
 func runPull(args []string) error {
 	if len(args) < 1 {
-		return fmt.Errorf("usage: miser pull <openai|claude> --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration name]")
+		return fmt.Errorf("usage: miser pull <openai|openai-usage|claude> --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration name]")
 	}
 	provider := args[0]
 	fs := flag.NewFlagSet("pull "+provider, flag.ContinueOnError)
@@ -157,7 +157,7 @@ func runPull(args []string) error {
 		return err
 	}
 	if *fromRaw == "" || *toRaw == "" || *out == "" {
-		return fmt.Errorf("usage: miser pull <openai|claude> --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration name]")
+		return fmt.Errorf("usage: miser pull <openai|openai-usage|claude> --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration name]")
 	}
 	from, err := parseDate(*fromRaw)
 	if err != nil {
@@ -178,10 +178,18 @@ func runPull(args []string) error {
 			To:          to,
 			APIKey:      os.Getenv(*apiKeyEnv),
 		})
+	case "openai-usage":
+		rows, err = miser.PullOpenAIUsage(miser.PullOptions{
+			AccountID:   *account,
+			Integration: defaultString(*integration, "codex"),
+			From:        from,
+			To:          to,
+			APIKey:      os.Getenv(*apiKeyEnv),
+		})
 	case "claude":
 		return fmt.Errorf("claude billing pull is not available yet; import a Claude invoice/billing CSV with `miser import invoice-csv ... --integration claude`")
 	default:
-		return fmt.Errorf("unknown pull provider %q; expected openai or claude", provider)
+		return fmt.Errorf("unknown pull provider %q; expected openai, openai-usage, or claude", provider)
 	}
 	if err != nil {
 		return err
@@ -189,7 +197,7 @@ func runPull(args []string) error {
 	if err := miser.WriteJSONL(rows, *out); err != nil {
 		return err
 	}
-	fmt.Printf("Pulled %d %s billing rows into %s\n", len(rows), provider, *out)
+	fmt.Printf("Pulled %d %s rows into %s\n", len(rows), provider, *out)
 	return nil
 }
 
@@ -242,6 +250,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  miser import ccusage ccusage.json --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser import invoice-csv invoice.csv --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser pull openai --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration codex]")
+	fmt.Fprintln(os.Stderr, "  miser pull openai-usage --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration codex]")
 }
 
 func defaultString(value, fallback string) string {

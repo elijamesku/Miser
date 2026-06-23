@@ -218,6 +218,21 @@ Cost basis: provider billing API
 
 This is the path to test real OpenAI/Codex API spend.
 
+If billing returns zero rows, pull usage instead. This can still show optimization room when spend was covered by credits, the billing period has not finalized, or you want token/request analysis instead of invoice math.
+
+```bash
+bin/miser pull openai-usage --from 2026-06-01 --to 2026-07-01 --out work/openai_usage.jsonl --account codex-work --integration codex
+bin/miser audit --explain --account codex-work --integration codex work/openai_usage.jsonl
+```
+
+Usage rows use:
+
+```text
+Cost basis: estimated token cost, not your actual invoice
+```
+
+That means the audit is useful for finding waste, but it is not a receipt.
+
 Claude billing pull is not automatic yet. Use `invoice-csv` for Claude until there is a supported Claude billing API for your account type.
 
 ## Log Format

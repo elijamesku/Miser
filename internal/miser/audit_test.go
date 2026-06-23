@@ -135,6 +135,50 @@ func TestOpenAICostsURL(t *testing.T) {
 	}
 }
 
+func TestOpenAIUsageURL(t *testing.T) {
+	from := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+	to := time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC)
+	got, err := openAIUsageURL(from, to)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "https://api.openai.com/v1/organization/usage/completions?") {
+		t.Fatalf("unexpected usage URL: %s", got)
+	}
+	if !strings.Contains(got, "bucket_width=1d") || !strings.Contains(got, "group_by=model") || !strings.Contains(got, "group_by=project_id") {
+		t.Fatalf("missing expected query params: %s", got)
+	}
+}
+
+func TestOpenAIUsageRowsCanFlagWaste(t *testing.T) {
+	report := Audit([]LLMCall{
+		{
+			ID:           "openai_usage_1",
+			Timestamp:    time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			Workflow:     "openai_api_usage",
+			Provider:     "openai",
+			Model:        "gpt-4o",
+			Prompt:       "OpenAI API usage model=gpt-4o requests=25",
+			InputTokens:  50000,
+			OutputTokens: 12000,
+			CostUSD:      0.25,
+			AccountID:    "codex-work",
+			Integration:  "codex",
+			CostBasis:    "estimated_token_cost",
+			Metadata: map[string]interface{}{
+				"source":             "openai_usage_api",
+				"num_model_requests": float64(25),
+			},
+		},
+	})
+	if len(report.TopWaste) == 0 {
+		t.Fatal("expected usage waste finding")
+	}
+	if report.TopWaste[0].Label != "High-volume provider API usage" {
+		t.Fatalf("unexpected top waste: %#v", report.TopWaste[0])
+	}
+}
+
 func testCall(id, workflow, prompt string, cost float64) LLMCall {
 	return LLMCall{
 		ID:           id,
