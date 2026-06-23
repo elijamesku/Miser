@@ -78,7 +78,23 @@ func (c *LLMCall) UnmarshalJSON(data []byte) error {
 		QualityScore: raw.QualityScore,
 		Metadata:     meta,
 	}
+	c.applyPublishedPricing()
 	return nil
+}
+
+func (c *LLMCall) applyPublishedPricing() {
+	source, _ := c.Metadata["source"].(string)
+	if source != "openai_usage_api" {
+		return
+	}
+	cachedInputTokens := intFromAny(c.Metadata["input_cached_tokens"])
+	cost, ok := estimateOpenAICostUSD(c.Model, c.InputTokens, c.OutputTokens, cachedInputTokens)
+	if !ok {
+		return
+	}
+	c.CostUSD = cost
+	c.CostBasis = "published_token_price"
+	c.Metadata["pricing_source"] = "openai_public_pricing"
 }
 
 func (c LLMCall) TotalTokens() int {

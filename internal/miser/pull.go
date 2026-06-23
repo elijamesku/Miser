@@ -146,6 +146,13 @@ func PullOpenAIUsage(opts PullOptions) ([]map[string]interface{}, error) {
 				continue
 			}
 			model := defaultString(result.Model, "unknown")
+			costUSD, priced := estimateOpenAICostUSD(model, result.InputTokens, result.OutputTokens, result.InputCachedTokens)
+			costBasis := "unpriced_token_usage"
+			pricingSource := "none"
+			if priced {
+				costBasis = "published_token_price"
+				pricingSource = "openai_public_pricing"
+			}
 			rows = append(rows, map[string]interface{}{
 				"id":                  fmt.Sprintf("openai_usage_%04d", rowNumber),
 				"timestamp":           timestamp,
@@ -155,10 +162,11 @@ func PullOpenAIUsage(opts PullOptions) ([]map[string]interface{}, error) {
 				"prompt":              usagePrompt(model, result),
 				"input_tokens":        result.InputTokens,
 				"output_tokens":       result.OutputTokens,
-				"cost_usd":            estimateOpenAICostUSD(model, result.InputTokens, result.OutputTokens, result.InputCachedTokens),
+				"cost_usd":            costUSD,
 				"account_id":          accountID,
 				"integration":         integration,
-				"cost_basis":          "estimated_token_cost",
+				"cost_basis":          costBasis,
+				"pricing_source":      pricingSource,
 				"source":              "openai_usage_api",
 				"project_id":          result.ProjectID,
 				"user_id":             result.UserID,
@@ -214,32 +222,41 @@ func usagePrompt(model string, result openAIUsageResult) string {
 	return strings.Join(parts, " ")
 }
 
-func estimateOpenAICostUSD(model string, inputTokens, outputTokens, cachedInputTokens int) float64 {
-	inputPerMillion, cachedPerMillion, outputPerMillion := openAIModelRates(model)
+func estimateOpenAICostUSD(model string, inputTokens, outputTokens, cachedInputTokens int) (float64, bool) {
+	inputPerMillion, cachedPerMillion, outputPerMillion, ok := openAIModelRates(model)
+	if !ok {
+		return 0, false
+	}
 	uncachedInputTokens := inputTokens - cachedInputTokens
 	if uncachedInputTokens < 0 {
 		uncachedInputTokens = 0
 	}
 	return (float64(uncachedInputTokens)/1_000_000)*inputPerMillion +
 		(float64(cachedInputTokens)/1_000_000)*cachedPerMillion +
-		(float64(outputTokens)/1_000_000)*outputPerMillion
+		(float64(outputTokens)/1_000_000)*outputPerMillion, true
 }
 
-func openAIModelRates(model string) (float64, float64, float64) {
+func openAIModelRates(model string) (float64, float64, float64, bool) {
 	name := strings.ToLower(model)
 	switch {
+	case strings.Contains(name, "gpt-5.5"):
+		return 5.00, 0.50, 30.00, true
+	case strings.Contains(name, "gpt-5.4-mini"):
+		return 0.75, 0.075, 4.50, true
+	case strings.Contains(name, "gpt-5.4"):
+		return 2.50, 0.25, 15.00, true
 	case strings.Contains(name, "gpt-4.1-mini"):
-		return 0.40, 0.10, 1.60
+		return 0.40, 0.10, 1.60, true
 	case strings.Contains(name, "gpt-4.1-nano"):
-		return 0.10, 0.025, 0.40
+		return 0.10, 0.025, 0.40, true
 	case strings.Contains(name, "gpt-4.1"):
-		return 2.00, 0.50, 8.00
+		return 2.00, 0.50, 8.00, true
 	case strings.Contains(name, "gpt-4o-mini"):
-		return 0.15, 0.075, 0.60
+		return 0.15, 0.075, 0.60, true
 	case strings.Contains(name, "gpt-4o"):
-		return 2.50, 1.25, 10.00
+		return 2.50, 1.25, 10.00, true
 	default:
-		return 1.00, 0.50, 4.00
+		return 0, 0, 0, false
 	}
 }
 

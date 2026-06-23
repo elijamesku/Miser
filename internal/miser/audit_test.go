@@ -1,6 +1,7 @@
 package miser
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -180,6 +181,40 @@ func TestOpenAIUsageRowsCanFlagContextReplay(t *testing.T) {
 	}
 	if !strings.Contains(report.TopWaste[0].Reason, "96.0% cached") {
 		t.Fatalf("missing cache ratio in reason: %s", report.TopWaste[0].Reason)
+	}
+}
+
+func TestOpenAIModelRatesUsePublishedGPT55Pricing(t *testing.T) {
+	cost, ok := estimateOpenAICostUSD("gpt-5.5", 17794923, 50472, 17386752)
+	if !ok {
+		t.Fatal("expected gpt-5.5 to have published pricing")
+	}
+	if fmt.Sprintf("%.6f", cost) != "12.248391" {
+		t.Fatalf("unexpected cost: %.6f", cost)
+	}
+}
+
+func TestOpenAIModelRatesRejectUnknownModels(t *testing.T) {
+	cost, ok := estimateOpenAICostUSD("unknown-future-model", 1000000, 1000000, 0)
+	if ok {
+		t.Fatal("expected unknown model to be unpriced")
+	}
+	if cost != 0 {
+		t.Fatalf("unexpected unknown model cost: %f", cost)
+	}
+}
+
+func TestOpenAIUsageUnmarshalAppliesPublishedPricing(t *testing.T) {
+	raw := []byte(`{"account_id":"openai-personal","cost_basis":"estimated_token_cost","cost_usd":9.303435,"id":"openai_usage_0001","input_cached_tokens":17386752,"input_tokens":17794923,"integration":"codex","model":"gpt-5.5","output_tokens":50472,"prompt":"OpenAI API usage model=gpt-5.5","provider":"openai","source":"openai_usage_api","timestamp":"2026-06-03T00:00:00Z","workflow":"openai_api_usage"}`)
+	var call LLMCall
+	if err := call.UnmarshalJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if call.CostBasis != "published_token_price" {
+		t.Fatalf("unexpected cost basis: %s", call.CostBasis)
+	}
+	if fmt.Sprintf("%.6f", call.CostUSD) != "12.248391" {
+		t.Fatalf("unexpected cost: %.6f", call.CostUSD)
 	}
 }
 
