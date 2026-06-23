@@ -11,6 +11,9 @@ from miser.models import LLMCall
 class WasteLine:
     label: str
     estimated_monthly_waste: float
+    reason: str
+    confidence: str
+    sample_call_ids: list[str]
 
 
 @dataclass(frozen=True)
@@ -29,6 +32,9 @@ class AuditReport:
                 {
                     "label": line.label,
                     "estimated_monthly_waste": round(line.estimated_monthly_waste, 4),
+                    "reason": line.reason,
+                    "confidence": line.confidence,
+                    "sample_call_ids": line.sample_call_ids,
                 }
                 for line in self.top_waste
             ],
@@ -38,11 +44,11 @@ class AuditReport:
 def audit_calls(calls: list[LLMCall]) -> AuditReport:
     monthly_spend = sum(call.cost_usd for call in calls)
     waste = [
-        WasteLine("Repeated long-context calls", _repeated_long_context_waste(calls)),
-        WasteLine("Expensive model used for classification", _classification_waste(calls)),
-        WasteLine("Duplicate summaries", _duplicate_summary_waste(calls)),
-        WasteLine("Agent retry loops", _retry_loop_waste(calls)),
-        WasteLine("Oversized PDF prompts", _oversized_pdf_waste(calls)),
+        _repeated_long_context_waste(calls),
+        _classification_waste(calls),
+        _duplicate_summary_waste(calls),
+        _retry_loop_waste(calls),
+        _oversized_pdf_waste(calls),
     ]
     waste = sorted((line for line in waste if line.estimated_monthly_waste > 0), key=lambda line: line.estimated_monthly_waste, reverse=True)
     avoidable = min(monthly_spend, sum(line.estimated_monthly_waste for line in waste))
@@ -56,7 +62,7 @@ def audit_calls(calls: list[LLMCall]) -> AuditReport:
     )
 
 
-def render_audit(report: AuditReport) -> str:
+def render_audit(report: AuditReport, explain: bool = False) -> str:
     lines = [
         "Miser AI Spend Audit",
         "",
@@ -72,24 +78,38 @@ def render_audit(report: AuditReport) -> str:
     else:
         for index, line in enumerate(report.top_waste, start=1):
             lines.append(f"{index}. {line.label}: ${line.estimated_monthly_waste:,.2f}")
+            if explain:
+                sample_ids = ", ".join(line.sample_call_ids) if line.sample_call_ids else "none"
+                lines.append(f"   Why: {line.reason}")
+                lines.append(f"   Confidence: {line.confidence}")
+                lines.append(f"   Sample calls: {sample_ids}")
 
     return "\n".join(lines)
 
 
-def _repeated_long_context_waste(calls: list[LLMCall]) -> float:
+def _repeated_long_context_waste(calls: list[LLMCall]) -> WasteLine:
     groups = _groups(calls)
     total = 0.0
+    samples: list[str] = []
     for grouped_calls in groups.values():
         if len(grouped_calls) < 3:
             continue
         avg_input_tokens = sum(call.input_tokens for call in grouped_calls) / len(grouped_calls)
         if avg_input_tokens >= 3000:
             total += sum(call.cost_usd for call in grouped_calls) * 0.55
-    return total
+            samples.extend(call.id for call in grouped_calls[:3] if call.id)
+    return WasteLine(
+        "Repeated long-context calls",
+        total,
+        "The same workflow repeatedly sends large prompts. Miser assumes context can be compressed, cached, or split before model escalation.",
+        "medium",
+        samples[:5],
+    )
 
 
-def _classification_waste(calls: list[LLMCall]) -> float:
+def _classification_waste(calls: list[LLMCall]) -> WasteLine:
     total = 0.0
+    samples: list[str] = []
     for call in calls:
         workflow = call.workflow.lower()
         prompt = call.prompt.lower()
@@ -97,32 +117,63 @@ def _classification_waste(calls: list[LLMCall]) -> float:
         is_expensive = any(name in call.model.lower() for name in ["sonnet", "opus", "gpt-4", "gemini-1.5-pro"])
         if is_classification and is_expensive:
             total += call.cost_usd * 0.70
-    return total
+            if call.id:
+                samples.append(call.id)
+    return WasteLine(
+        "Expensive model used for classification",
+        total,
+        "Classification and triage tasks often route well through local classifiers, smaller models, or rules with frontier fallback.",
+        "high",
+        samples[:5],
+    )
 
 
-def _duplicate_summary_waste(calls: list[LLMCall]) -> float:
+def _duplicate_summary_waste(calls: list[LLMCall]) -> WasteLine:
     groups = _groups(calls)
     total = 0.0
+    samples: list[str] = []
     for grouped_calls in groups.values():
         sample = grouped_calls[0]
         is_summary = "summar" in sample.workflow.lower() or "summar" in sample.prompt.lower()
         if is_summary and len(grouped_calls) >= 3:
             total += sum(call.cost_usd for call in grouped_calls[1:]) * 0.80
-    return total
+            samples.extend(call.id for call in grouped_calls[:5] if call.id)
+    return WasteLine(
+        "Duplicate summaries",
+        total,
+        "Miser found repeated summary prompts after masking IDs and emails. These are strong candidates for exact or semantic caching.",
+        "high",
+        samples[:5],
+    )
 
 
-def _retry_loop_waste(calls: list[LLMCall]) -> float:
+def _retry_loop_waste(calls: list[LLMCall]) -> WasteLine:
     retries = [call for call in calls if _is_retry(call)]
-    return sum(call.cost_usd for call in retries) * 0.85
+    return WasteLine(
+        "Agent retry loops",
+        sum(call.cost_usd for call in retries) * 0.85,
+        "Retry attempts are marked in metadata or prompt text. These usually need guardrails, tool-result caching, or deterministic failure handling.",
+        "medium",
+        [call.id for call in retries[:5] if call.id],
+    )
 
 
-def _oversized_pdf_waste(calls: list[LLMCall]) -> float:
+def _oversized_pdf_waste(calls: list[LLMCall]) -> WasteLine:
     total = 0.0
+    samples: list[str] = []
     for call in calls:
         text = f"{call.workflow} {call.prompt}".lower()
         if "pdf" in text and call.input_tokens >= 6000:
             total += call.cost_usd * 0.60
-    return total
+            if call.id:
+                samples.append(call.id)
+    return WasteLine(
+        "Oversized PDF prompts",
+        total,
+        "PDF workflows are sending very large prompts. Extraction should often be chunked, templated, or handled with deterministic parsing before LLM review.",
+        "medium",
+        samples[:5],
+    )
 
 
 def _groups(calls: list[LLMCall]) -> dict[str, list[LLMCall]]:
