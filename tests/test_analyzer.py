@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from miser.analyzer import AnalyzerConfig, analyze_calls
 from miser.audit import audit_calls, render_audit
 from miser.fingerprint import fingerprint_prompt, normalize_prompt
+from miser.importers import import_ccusage
 from miser.models import LLMCall
 from miser.routes import render_route_config
 
@@ -70,6 +71,21 @@ class AnalyzerTest(unittest.TestCase):
         self.assertIn("Sample calls:", rendered)
         self.assertEqual(report.monthly_spend_analyzed, 300)
         self.assertGreater(report.estimated_avoidable_spend, 0)
+
+    def test_import_ccusage_normalizes_usage_rows(self) -> None:
+        rows = import_ccusage("examples/ccusage.json")
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["workflow"], "coding_agent_usage")
+        self.assertEqual(rows[0]["source"], "ccusage")
+        self.assertGreater(rows[0]["input_tokens"], 0)
+
+        calls = [LLMCall.from_dict(row) for row in rows]
+        report = audit_calls(calls)
+        rendered = render_audit(report, explain=True)
+
+        self.assertIn("Coding-agent context reconstruction", rendered)
+        self.assertIn("ccusage rows", rendered)
 
 
 if __name__ == "__main__":
