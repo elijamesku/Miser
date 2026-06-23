@@ -6,6 +6,7 @@ import sys
 
 from miser.analyzer import AnalyzerConfig, analyze_calls
 from miser.audit import audit_calls, render_audit
+from miser.importers import import_ccusage, write_jsonl
 from miser.io import dumps_receipts, load_jsonl
 from miser.routes import render_route_config
 
@@ -18,6 +19,12 @@ def main(argv: list[str] | None = None) -> None:
     audit.add_argument("path", help="Path to a JSONL log file.")
     audit.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     audit.add_argument("--explain", action="store_true", help="Show evidence and reasoning for each waste bucket.")
+
+    import_parser = subparsers.add_parser("import", help="Normalize external usage exports into Miser JSONL.")
+    import_subparsers = import_parser.add_subparsers(dest="source", required=True)
+    ccusage = import_subparsers.add_parser("ccusage", help="Import ccusage --json output.")
+    ccusage.add_argument("path", help="Path to ccusage JSON output.")
+    ccusage.add_argument("--out", required=True, help="Path to write Miser JSONL.")
 
     analyze = subparsers.add_parser("analyze", help="Analyze JSONL LLM call logs.")
     analyze.add_argument("path", help="Path to a JSONL log file.")
@@ -36,6 +43,12 @@ def main(argv: list[str] | None = None) -> None:
             print(json.dumps(report.to_dict(), indent=2))
         else:
             print(render_audit(report, explain=args.explain))
+
+    elif args.command == "import":
+        if args.source == "ccusage":
+            rows = import_ccusage(args.path)
+            write_jsonl(rows, args.out)
+            print(f"Imported {len(rows)} ccusage rows into {args.out}")
 
     elif args.command == "analyze":
         calls = load_jsonl(args.path)
