@@ -63,9 +63,11 @@ class AnalyzerTest(unittest.TestCase):
         ]
 
         report = audit_calls(calls)
-        rendered = render_audit(report)
+        rendered = render_audit(report, explain=True)
 
         self.assertIn("Miser AI Spend Audit", rendered)
+        self.assertIn("Why:", rendered)
+        self.assertIn("Sample calls:", rendered)
         self.assertEqual(report.monthly_spend_analyzed, 300)
         self.assertGreater(report.estimated_avoidable_spend, 0)
 
