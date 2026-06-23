@@ -13,6 +13,7 @@ func Audit(calls []LLMCall) AuditReport {
 	}
 
 	waste := []WasteLine{
+		openAIContextReplayWaste(calls),
 		providerUsageWaste(calls),
 		codingAgentContextWaste(calls),
 		repeatedLongContextWaste(calls),
@@ -90,12 +91,77 @@ func RenderAudit(report AuditReport, explain bool) string {
 	return b.String()
 }
 
+func openAIContextReplayWaste(calls []LLMCall) WasteLine {
+	totalCost := 0.0
+	inputTokens := 0
+	cachedTokens := 0
+	outputTokens := 0
+	models := map[string]bool{}
+	var samples []string
+
+	for _, call := range calls {
+		source, _ := call.Metadata["source"].(string)
+		if source != "openai_usage_api" {
+			continue
+		}
+		cacheRead := intFromAny(call.Metadata["input_cached_tokens"])
+		if call.InputTokens < 25000 || cacheRead < 10000 {
+			continue
+		}
+		cacheRatio := float64(cacheRead) / float64(call.InputTokens)
+		if cacheRatio < 0.50 {
+			continue
+		}
+
+		totalCost += call.CostUSD * 0.25
+		inputTokens += call.InputTokens
+		cachedTokens += cacheRead
+		outputTokens += call.OutputTokens
+		models[call.Model] = true
+		samples = appendSample(samples, call.ID)
+	}
+
+	if totalCost == 0 {
+		return WasteLine{}
+	}
+
+	cacheRatio := 0.0
+	if inputTokens > 0 {
+		cacheRatio = float64(cachedTokens) / float64(inputTokens)
+	}
+	outputRatio := 0.0
+	if inputTokens+outputTokens > 0 {
+		outputRatio = float64(outputTokens) / float64(inputTokens+outputTokens)
+	}
+
+	return WasteLine{
+		Label:                 "Coding-agent context replay",
+		EstimatedMonthlyWaste: totalCost,
+		WorkflowSavingsRate:   0.25,
+		Reason: fmt.Sprintf(
+			"OpenAI usage rows show %s input tokens, %s cached input tokens (%.1f%% cached), and %s output tokens (%.1f%% of total tokens) on %s. Caching is working, but the agent is still replaying huge context. Likely fixes: narrower task scope, repo/session summaries, file indexes, and smaller context handoffs before model calls.",
+			formatInt(inputTokens),
+			formatInt(cachedTokens),
+			cacheRatio*100,
+			formatInt(outputTokens),
+			outputRatio*100,
+			modelList(models),
+		),
+		Confidence:    "medium",
+		SampleCallIDs: samples,
+	}
+}
+
 func providerUsageWaste(calls []LLMCall) WasteLine {
 	total := 0.0
 	var samples []string
 	for _, call := range calls {
 		source, _ := call.Metadata["source"].(string)
 		if source != "openai_usage_api" {
+			continue
+		}
+		cacheRead := intFromAny(call.Metadata["input_cached_tokens"])
+		if call.InputTokens >= 25000 && cacheRead >= 10000 && float64(cacheRead)/float64(call.InputTokens) >= 0.50 {
 			continue
 		}
 		requests := intFromAny(call.Metadata["num_model_requests"])
@@ -340,4 +406,34 @@ func intFromAny(value interface{}) int {
 
 func dollars(value float64) string {
 	return fmt.Sprintf("$%.2f", value)
+}
+
+func formatInt(value int) string {
+	raw := fmt.Sprintf("%d", value)
+	if len(raw) <= 3 {
+		return raw
+	}
+	var b strings.Builder
+	prefix := len(raw) % 3
+	if prefix == 0 {
+		prefix = 3
+	}
+	b.WriteString(raw[:prefix])
+	for i := prefix; i < len(raw); i += 3 {
+		b.WriteString(",")
+		b.WriteString(raw[i : i+3])
+	}
+	return b.String()
+}
+
+func modelList(models map[string]bool) string {
+	if len(models) == 0 {
+		return "unknown models"
+	}
+	var names []string
+	for model := range models {
+		names = append(names, model)
+	}
+	sort.Strings(names)
+	return strings.Join(names, ", ")
 }

@@ -150,7 +150,7 @@ func TestOpenAIUsageURL(t *testing.T) {
 	}
 }
 
-func TestOpenAIUsageRowsCanFlagWaste(t *testing.T) {
+func TestOpenAIUsageRowsCanFlagContextReplay(t *testing.T) {
 	report := Audit([]LLMCall{
 		{
 			ID:           "openai_usage_1",
@@ -166,16 +166,20 @@ func TestOpenAIUsageRowsCanFlagWaste(t *testing.T) {
 			Integration:  "codex",
 			CostBasis:    "estimated_token_cost",
 			Metadata: map[string]interface{}{
-				"source":             "openai_usage_api",
-				"num_model_requests": float64(25),
+				"source":              "openai_usage_api",
+				"num_model_requests":  float64(25),
+				"input_cached_tokens": float64(48000),
 			},
 		},
 	})
 	if len(report.TopWaste) == 0 {
 		t.Fatal("expected usage waste finding")
 	}
-	if report.TopWaste[0].Label != "High-volume provider API usage" {
+	if report.TopWaste[0].Label != "Coding-agent context replay" {
 		t.Fatalf("unexpected top waste: %#v", report.TopWaste[0])
+	}
+	if !strings.Contains(report.TopWaste[0].Reason, "96.0% cached") {
+		t.Fatalf("missing cache ratio in reason: %s", report.TopWaste[0].Reason)
 	}
 }
 
