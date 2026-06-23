@@ -13,6 +13,7 @@ func Audit(calls []LLMCall) AuditReport {
 	}
 
 	waste := []WasteLine{
+		providerUsageWaste(calls),
 		codingAgentContextWaste(calls),
 		repeatedLongContextWaste(calls),
 		classificationWaste(calls),
@@ -87,6 +88,30 @@ func RenderAudit(report AuditReport, explain bool) string {
 		}
 	}
 	return b.String()
+}
+
+func providerUsageWaste(calls []LLMCall) WasteLine {
+	total := 0.0
+	var samples []string
+	for _, call := range calls {
+		source, _ := call.Metadata["source"].(string)
+		if source != "openai_usage_api" {
+			continue
+		}
+		requests := intFromAny(call.Metadata["num_model_requests"])
+		if requests >= 10 || call.InputTokens >= 25000 || call.OutputTokens >= 10000 {
+			total += call.CostUSD * 0.25
+			samples = appendSample(samples, call.ID)
+		}
+	}
+	return WasteLine{
+		Label:                 "High-volume provider API usage",
+		EstimatedMonthlyWaste: total,
+		WorkflowSavingsRate:   0.25,
+		Reason:                "OpenAI usage API rows show high request or token volume. These aggregate rows are good first-pass candidates for prompt tightening, cache checks, cheaper model routing, and per-project/API-key drilldown.",
+		Confidence:            "low",
+		SampleCallIDs:         samples,
+	}
 }
 
 func codingAgentContextWaste(calls []LLMCall) WasteLine {
