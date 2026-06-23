@@ -17,14 +17,13 @@ func ImportCCUsage(path string) ([]map[string]interface{}, error) {
 		return nil, err
 	}
 
-	var usageRows []map[string]interface{}
-	findUsageRows(payload, &usageRows)
+	usageRows := ccusageRows(payload)
 
 	out := make([]map[string]interface{}, 0, len(usageRows))
 	for i, row := range usageRows {
 		inputTokens := firstInt(row, "inputTokens", "input_tokens", "promptTokens", "prompt_tokens", "cacheCreationInputTokens", "cache_creation_input_tokens")
 		outputTokens := firstInt(row, "outputTokens", "output_tokens", "completionTokens", "completion_tokens")
-		cacheReadTokens := firstInt(row, "cacheReadInputTokens", "cache_read_input_tokens")
+		cacheReadTokens := firstInt(row, "cacheReadTokens", "cacheReadInputTokens", "cache_read_tokens", "cache_read_input_tokens")
 		totalTokens := firstInt(row, "totalTokens", "total_tokens", "tokens")
 		if totalTokens > 0 && inputTokens == 0 && outputTokens == 0 {
 			inputTokens = int(float64(totalTokens) * 0.8)
@@ -34,7 +33,7 @@ func ImportCCUsage(path string) ([]map[string]interface{}, error) {
 		if project == "" {
 			project = "unknown"
 		}
-		label := firstString(row, "date", "month", "week", "sessionId", "session_id")
+		label := firstString(row, "period", "date", "month", "week", "sessionId", "session_id")
 		if label == "" {
 			label = fmt.Sprintf("row_%d", i+1)
 		}
@@ -57,6 +56,38 @@ func ImportCCUsage(path string) ([]map[string]interface{}, error) {
 		})
 	}
 	return out, nil
+}
+
+func ccusageRows(payload interface{}) []map[string]interface{} {
+	root, ok := payload.(map[string]interface{})
+	if !ok {
+		var rows []map[string]interface{}
+		findUsageRows(payload, &rows)
+		return rows
+	}
+	for _, key := range []string{"daily", "monthly", "sessions"} {
+		if rows := usageRowsFromArray(root[key]); len(rows) > 0 {
+			return rows
+		}
+	}
+	var rows []map[string]interface{}
+	findUsageRows(payload, &rows)
+	return rows
+}
+
+func usageRowsFromArray(value interface{}) []map[string]interface{} {
+	items, ok := value.([]interface{})
+	if !ok {
+		return nil
+	}
+	rows := make([]map[string]interface{}, 0, len(items))
+	for _, item := range items {
+		row, ok := item.(map[string]interface{})
+		if ok && looksLikeUsageRow(row) {
+			rows = append(rows, row)
+		}
+	}
+	return rows
 }
 
 func findUsageRows(value interface{}, rows *[]map[string]interface{}) {
@@ -116,7 +147,7 @@ func firstString(row map[string]interface{}, keys ...string) string {
 }
 
 func timestamp(row map[string]interface{}) string {
-	raw := firstString(row, "timestamp", "date", "month", "week", "startTime", "startedAt")
+	raw := firstString(row, "timestamp", "period", "date", "month", "week", "startTime", "startedAt")
 	if raw == "" {
 		return time.Now().UTC().Format(time.RFC3339)
 	}
