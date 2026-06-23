@@ -12,9 +12,7 @@ go test ./cmd/... ./internal/...
 git push -u origin feature/name
 ```
 
-Open a pull request into `main`.
-
-Right now Eli is the only maintainer, so there is no required second approver. CI still needs to pass before merge.
+Open a pull request into `main`. CI should pass before merge.
 
 ## What To Preserve
 
