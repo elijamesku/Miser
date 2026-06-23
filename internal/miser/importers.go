@@ -1,13 +1,21 @@
 package miser
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 	"time"
 )
 
-func ImportCCUsage(path string) ([]map[string]interface{}, error) {
+type ImportOptions struct {
+	AccountID   string
+	Integration string
+}
+
+func ImportCCUsage(path string, opts ImportOptions) ([]map[string]interface{}, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -38,6 +46,7 @@ func ImportCCUsage(path string) ([]map[string]interface{}, error) {
 			label = fmt.Sprintf("row_%d", i+1)
 		}
 
+		integration := defaultString(opts.Integration, "ccusage")
 		out = append(out, map[string]interface{}{
 			"id":                fmt.Sprintf("ccusage_%04d", i+1),
 			"timestamp":         timestamp(row),
@@ -48,6 +57,9 @@ func ImportCCUsage(path string) ([]map[string]interface{}, error) {
 			"input_tokens":      inputTokens + cacheReadTokens,
 			"output_tokens":     outputTokens,
 			"cost_usd":          firstFloat(row, "totalCost", "costUSD", "cost_usd", "cost", "total_cost"),
+			"account_id":        opts.AccountID,
+			"integration":       integration,
+			"cost_basis":        "estimated_token_cost",
 			"source":            "ccusage",
 			"project":           project,
 			"report_label":      label,
@@ -56,6 +68,105 @@ func ImportCCUsage(path string) ([]map[string]interface{}, error) {
 		})
 	}
 	return out, nil
+}
+
+func ImportInvoiceCSV(path string, opts ImportOptions) ([]map[string]interface{}, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.FieldsPerRecord = -1
+	records, err := reader.ReadAll()
+	if err != nil {
+		return nil, err
+	}
+	if len(records) < 2 {
+		return nil, fmt.Errorf("invoice csv needs a header row and at least one data row")
+	}
+
+	header := map[string]int{}
+	for i, name := range records[0] {
+		header[normalizeColumn(name)] = i
+	}
+
+	out := make([]map[string]interface{}, 0, len(records)-1)
+	for i, record := range records[1:] {
+		cost, err := invoiceCost(record, header)
+		if err != nil {
+			return nil, fmt.Errorf("invoice row %d: %w", i+2, err)
+		}
+		date := invoiceString(record, header, "date", "timestamp", "period", "month")
+		if date == "" {
+			return nil, fmt.Errorf("invoice row %d: missing date/timestamp/period/month", i+2)
+		}
+		provider := defaultString(invoiceString(record, header, "provider", "vendor"), opts.Integration)
+		if provider == "" {
+			provider = "unknown"
+		}
+		description := defaultString(invoiceString(record, header, "description", "item", "memo"), "Billing export row")
+		accountID := defaultString(opts.AccountID, invoiceString(record, header, "account", "account_id", "workspace", "organization"))
+		integration := defaultString(opts.Integration, provider)
+		out = append(out, map[string]interface{}{
+			"id":            fmt.Sprintf("invoice_%04d", i+1),
+			"timestamp":     normalizeTimestamp(date),
+			"workflow":      "billing_invoice",
+			"provider":      provider,
+			"model":         defaultString(invoiceString(record, header, "model"), "n/a"),
+			"prompt":        description,
+			"input_tokens":  0,
+			"output_tokens": 0,
+			"cost_usd":      cost,
+			"account_id":    accountID,
+			"integration":   integration,
+			"cost_basis":    "actual_invoice",
+			"source":        "invoice_csv",
+		})
+	}
+	return out, nil
+}
+
+func invoiceCost(record []string, header map[string]int) (float64, error) {
+	raw := invoiceString(record, header, "cost_usd", "cost", "amount", "total", "charge")
+	if raw == "" {
+		return 0, fmt.Errorf("missing cost_usd/cost/amount/total/charge")
+	}
+	cleaned := strings.TrimSpace(strings.ReplaceAll(raw, "$", ""))
+	cleaned = strings.ReplaceAll(cleaned, ",", "")
+	value, err := strconv.ParseFloat(cleaned, 64)
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
+}
+
+func invoiceString(record []string, header map[string]int, names ...string) string {
+	for _, name := range names {
+		index, ok := header[normalizeColumn(name)]
+		if ok && index < len(record) {
+			return strings.TrimSpace(record[index])
+		}
+	}
+	return ""
+}
+
+func normalizeColumn(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = strings.ReplaceAll(value, " ", "_")
+	value = strings.ReplaceAll(value, "-", "_")
+	return value
+}
+
+func normalizeTimestamp(value string) string {
+	if len(value) == 7 {
+		value += "-01"
+	}
+	if ts, err := parseTime(value); err == nil {
+		return ts.UTC().Format(time.RFC3339)
+	}
+	return value
 }
 
 func ccusageRows(payload interface{}) []map[string]interface{} {
