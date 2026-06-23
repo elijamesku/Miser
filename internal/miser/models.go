@@ -83,6 +83,7 @@ func (c LLMCall) Route() string {
 type WasteLine struct {
 	Label                 string   `json:"label"`
 	EstimatedMonthlyWaste float64  `json:"estimated_monthly_waste"`
+	WorkflowSavingsRate   float64  `json:"workflow_savings_rate"`
 	Reason                string   `json:"reason"`
 	Confidence            string   `json:"confidence"`
 	SampleCallIDs         []string `json:"sample_call_ids"`
