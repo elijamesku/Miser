@@ -1,53 +1,66 @@
-# Miser Architecture
+# Architecture
 
-Miser is designed as an AI spend compiler, not just a cost dashboard.
-
-## Core Loop
+Rough shape for Miser:
 
 ```text
-Observe -> Cluster -> Diagnose -> Propose -> Verify -> Enforce -> Monitor
+logs -> audit -> explain -> recommend -> verify -> route/patch -> track savings
 ```
 
-## Components
+## 1. Logs
 
-### Observer
+Input can come from:
 
-Captures LLM traffic from SDK wrappers, gateways, exported logs, or providers.
+- JSONL logs
+- `ccusage`
+- gateways like LiteLLM
+- provider exports
+- app-specific logs
 
-Minimum call shape:
+Minimum useful fields:
 
-- workflow name
+- workflow
 - provider/model
 - prompt or prompt hash
 - token counts
 - cost
-- latency
-- optional quality signal
+- timestamp
 
-### Clusterer
+## 2. Audit
 
-Groups repeated expensive behavior. The first implementation uses prompt normalization and deterministic fingerprints. Later versions should add embeddings and workflow-aware similarity.
+The audit finds obvious waste:
 
-### Savings Compiler
+- duplicate summaries
+- long repeated context
+- expensive model used for classification
+- oversized PDF prompts
+- retry loops
+- coding-agent context reconstruction
 
-Produces replacement candidates:
+This should stay explainable. Every finding needs sample call IDs and a reason.
 
-- exact cache
-- semantic cache
-- smaller cloud model
-- local classifier
-- deterministic parser
+## 3. Recommendations
+
+Miser should recommend the cheapest safe replacement:
+
+- cache
 - prompt compression
+- smaller model
+- local model
 - rule/template
-- frontier fallback
+- deterministic code
+- expensive model fallback
 
-### Verifier
+## 4. Verification
 
-Runs replay evals before an optimization is trusted. A route should not be applied without a quality threshold, rollback, and cost comparison.
+This part matters most.
 
-### Enforcer
+Before Miser applies anything automatically, it should replay old examples and check that quality stays above a threshold.
 
-Turns recommendations into executable config or code:
+No proof, no auto-route.
+
+## 5. Routes And Patches
+
+Eventually Miser should output real changes:
 
 ```yaml
 route:
@@ -58,15 +71,25 @@ route:
   quality_guard: replay_eval >= 0.95
 ```
 
-## Defensibility
+Or a code patch when the LLM call can become normal software.
 
-The open-source core earns trust and distribution. The defensible asset is the verified savings loop:
+## Savings Targets
 
-- company-specific workflow memory
-- replay datasets
-- optimization receipts
-- approved route history
-- domain-specific recipes
-- enterprise controls
+Keep two numbers separate:
 
-The moat is not that nobody can copy the code. The moat is that Miser becomes the trusted savings memory layer for production AI traffic.
+- total bill savings
+- per-workflow savings
+
+I think the believable target is:
+
+- 25-50% off total AI spend for messy/high-volume orgs
+- 80-90% off specific repetitive workflows
+
+The 80-90% number comes from replacing expensive calls with stacked cheaper paths:
+
+1. compress context
+2. cache repeated work
+3. use smaller models for easy cases
+4. use local models when good enough
+5. replace stable workflows with code
+6. keep frontier fallback for hard/ambiguous cases
