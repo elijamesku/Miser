@@ -83,6 +83,21 @@ Or generate a reviewable route config:
 python3 -m miser analyze examples/llm_calls.jsonl --routes work/routes.yaml
 ```
 
+To see why Miser flagged each bucket:
+
+```bash
+python3 -m miser audit examples/llm_calls.jsonl --explain
+```
+
+Example:
+
+```text
+1. Duplicate summaries: $0.16
+   Why: Miser found repeated summary prompts after masking IDs and emails. These are strong candidates for exact or semantic caching.
+   Confidence: high
+   Sample calls: call_001, call_002, call_003, call_004, call_005
+```
+
 ## Log Format
 
 Miser expects newline-delimited JSON:
