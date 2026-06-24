@@ -258,6 +258,43 @@ func TestCCUsageUnmarshalAppliesClaudePricing(t *testing.T) {
 	}
 }
 
+func TestPlanTurnsAuditFindingIntoExecutablePolicy(t *testing.T) {
+	plan := Plan([]LLMCall{
+		{
+			ID:           "openai_usage_1",
+			Timestamp:    time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			Workflow:     "openai_api_usage",
+			Provider:     "openai",
+			Model:        "gpt-5.5",
+			Prompt:       "OpenAI API usage model=gpt-5.5",
+			InputTokens:  100000,
+			OutputTokens: 100,
+			CostUSD:      10,
+			AccountID:    "openai-personal",
+			Integration:  "codex",
+			CostBasis:    "published_token_price",
+			Metadata: map[string]interface{}{
+				"source":              "openai_usage_api",
+				"input_cached_tokens": float64(90000),
+			},
+		},
+	})
+	if len(plan.Items) != 1 {
+		t.Fatalf("expected one plan item, got %d", len(plan.Items))
+	}
+	item := plan.Items[0]
+	if item.Workflow != "coding_agent_context_replay" {
+		t.Fatalf("unexpected workflow: %s", item.Workflow)
+	}
+	if fmt.Sprintf("%.2f", item.CurrentMonthlyCost) != "10.00" || fmt.Sprintf("%.2f", item.EstimatedSavings) != "2.50" {
+		t.Fatalf("unexpected plan money: %#v", item)
+	}
+	rendered := RenderPlanYAML(plan)
+	if !strings.Contains(rendered, "bounded_context") || !strings.Contains(rendered, "competitor_overlap") || !strings.Contains(rendered, "miser_difference") {
+		t.Fatalf("missing executable plan details:\n%s", rendered)
+	}
+}
+
 func testCall(id, workflow, prompt string, cost float64) LLMCall {
 	return LLMCall{
 		ID:           id,
