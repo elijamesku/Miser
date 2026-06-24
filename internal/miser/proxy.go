@@ -91,6 +91,10 @@ func (s *ProxyServer) Handler() http.Handler {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintln(w, "ok")
 	})
+	mux.HandleFunc("/favicon.ico", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	mux.HandleFunc("/miser/api/requests", s.handleConsoleRequests)
 	mux.HandleFunc("/", s.handle)
 	return mux
 }
@@ -116,6 +120,17 @@ func ServeProxy(opts ProxyOptions) error {
 }
 
 func (s *ProxyServer) handle(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet && (r.URL.Path == "/" || r.URL.Path == "/miser") {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, RenderConsoleHTML(ConsoleConfig{
+			Provider:    s.opts.Provider,
+			AccountID:   s.opts.AccountID,
+			Integration: s.opts.Integration,
+			LogPath:     s.opts.LogPath,
+			CachePath:   s.opts.CachePath,
+		}))
+		return
+	}
 	start := time.Now()
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
@@ -174,6 +189,22 @@ func (s *ProxyServer) handle(w http.ResponseWriter, r *http.Request) {
 	s.logCall(r, info, resp.StatusCode, respBody, start, "miss", false)
 }
 
+func (s *ProxyServer) handleConsoleRequests(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	rows, err := loadProxyLogRows(s.opts.LogPath, 100)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	encoder := json.NewEncoder(w)
+	encoder.SetEscapeHTML(false)
+	_ = encoder.Encode(rows)
+}
+
 func (s *ProxyServer) newUpstreamRequest(original *http.Request, body []byte) (*http.Request, error) {
 	target := *s.upstream
 	target.Path = singleJoiningSlash(s.upstream.Path, original.URL.Path)
@@ -205,13 +236,16 @@ func (s *ProxyServer) logCall(r *http.Request, info proxyRequestInfo, status int
 	}
 	model := firstNonEmpty(usage.Model, info.Model, "unknown")
 	cost := 0.0
+	cacheSaved := 0.0
 	costBasis := "unpriced_proxy_usage"
-	if !cacheHit {
-		if priced, pricing, ok := PriceTokenUsage(s.opts.Provider, model, inputTokens, outputTokens, usage.CachedInputTokens); ok {
+	if priced, pricing, ok := PriceTokenUsage(s.opts.Provider, model, inputTokens, outputTokens, usage.CachedInputTokens); ok {
+		if cacheHit {
+			cacheSaved = priced
+		} else {
 			cost = priced
 			costBasis = "published_token_price"
-			_ = pricing
 		}
+		_ = pricing
 	}
 	if cacheHit {
 		costBasis = "miser_exact_cache"
@@ -240,6 +274,7 @@ func (s *ProxyServer) logCall(r *http.Request, info proxyRequestInfo, status int
 		"http_path":            r.URL.Path,
 		"http_status":          status,
 		"cache_status":         cacheStatus,
+		"cache_saved_usd":      cacheSaved,
 		"request_fingerprint":  info.Fingerprint,
 		"input_cached_tokens":  usage.CachedInputTokens,
 		"prompt_chars":         len(info.Prompt),

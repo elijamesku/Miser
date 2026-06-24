@@ -354,6 +354,14 @@ Then point an OpenAI-compatible client at:
 http://127.0.0.1:8788/v1
 ```
 
+Open the console:
+
+```text
+http://127.0.0.1:8788
+```
+
+The console includes a chat playground, a live Miser decision trace, recent intercepted requests, and a request inspector showing the original request, Miser action, final provider route, cost after Miser, and estimated cache savings.
+
 The proxy forwards requests to OpenAI, logs each intercepted call, prices usage from response token counts when available, and exact-caches identical non-streaming chat/responses requests. Cache hits return before the provider call and are logged with `cost_basis: miser_exact_cache`.
 
 For privacy, full prompt text is not stored by default. Use `--store-prompts` only when you are testing locally or have permission to keep prompt text in logs.

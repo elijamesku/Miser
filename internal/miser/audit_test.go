@@ -2,6 +2,7 @@ package miser
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -502,8 +503,21 @@ func TestProxyLogsAndExactCachesOpenAIRequests(t *testing.T) {
 	proxy := httptest.NewServer(server.Handler())
 	defer proxy.Close()
 
+	resp, err := http.Get(proxy.URL + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if !strings.Contains(string(root), "Miser Console") || !strings.Contains(string(root), "Decision Trace") {
+		t.Fatalf("missing console UI:\n%s", string(root))
+	}
+
 	body := strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Classify ticket 123"}]}`)
-	resp, err := http.Post(proxy.URL+"/v1/chat/completions", "application/json", body)
+	resp, err = http.Post(proxy.URL+"/v1/chat/completions", "application/json", body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,8 +556,20 @@ func TestProxyLogsAndExactCachesOpenAIRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(rawLog), `"miser_intercepted":true`) || !strings.Contains(string(rawLog), `"cache_status":"hit"`) {
+	if !strings.Contains(string(rawLog), `"miser_intercepted":true`) || !strings.Contains(string(rawLog), `"cache_status":"hit"`) || !strings.Contains(string(rawLog), `"cache_saved_usd"`) {
 		t.Fatalf("missing proxy metadata:\n%s", string(rawLog))
+	}
+	resp, err = http.Get(proxy.URL + "/miser/api/requests")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiRows, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if !strings.Contains(string(apiRows), `"cache_status":"hit"`) || !strings.Contains(string(apiRows), `"miser_intercepted":true`) {
+		t.Fatalf("missing request API rows:\n%s", string(apiRows))
 	}
 }
 
