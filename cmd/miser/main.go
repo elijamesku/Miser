@@ -24,6 +24,8 @@ func main() {
 		err = runAnalyze(os.Args[2:])
 	case "plan":
 		err = runPlan(os.Args[2:])
+	case "reconcile":
+		err = runReconcile(os.Args[2:])
 	case "import":
 		err = runImport(os.Args[2:])
 	case "pull":
@@ -149,6 +151,51 @@ func runPlan(args []string) error {
 	return nil
 }
 
+func runReconcile(args []string) error {
+	fs := flag.NewFlagSet("reconcile", flag.ContinueOnError)
+	actualSpend := fs.Float64("actual-spend", 0, "actual invoice spend to allocate across usage rows")
+	invoiceCSV := fs.String("invoice-csv", "", "invoice CSV to sum and allocate across usage rows")
+	out := fs.String("out", "", "write reconciled usage rows to JSONL")
+	account := fs.String("account", "", "only reconcile one account_id")
+	integration := fs.String("integration", "", "only reconcile one integration")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 || *out == "" {
+		return fmt.Errorf("usage: miser reconcile [--actual-spend usd | --invoice-csv invoice.csv] --out actual_usage.jsonl [--account id] [--integration name] usage.jsonl")
+	}
+	if *actualSpend > 0 && *invoiceCSV != "" {
+		return fmt.Errorf("use either --actual-spend or --invoice-csv, not both")
+	}
+
+	total := *actualSpend
+	var err error
+	if *invoiceCSV != "" {
+		total, err = invoiceCSVTotal(*invoiceCSV, *account, *integration)
+		if err != nil {
+			return err
+		}
+	}
+	if total <= 0 {
+		return fmt.Errorf("actual invoice spend is required; pass --actual-spend or --invoice-csv")
+	}
+
+	calls, err := miser.LoadJSONL(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	calls = miser.FilterCalls(calls, miser.FilterConfig{AccountID: *account, Integration: *integration})
+	rows, err := miser.ReconcileToActualSpend(calls, total)
+	if err != nil {
+		return err
+	}
+	if err := miser.WriteJSONL(rows, *out); err != nil {
+		return err
+	}
+	fmt.Printf("Reconciled %d usage rows to actual invoice spend $%.2f into %s\n", len(rows), total, *out)
+	return nil
+}
+
 func runImport(args []string) error {
 	if len(args) < 1 {
 		return fmt.Errorf("usage: miser import <ccusage|invoice-csv> input --out logs.jsonl [--account id] [--integration name]")
@@ -241,6 +288,30 @@ func runPull(args []string) error {
 	return nil
 }
 
+func invoiceCSVTotal(path, account, integration string) (float64, error) {
+	rows, err := miser.ImportInvoiceCSV(path, miser.ImportOptions{})
+	if err != nil {
+		return 0, err
+	}
+	total := 0.0
+	for _, row := range rows {
+		if account != "" && row["account_id"] != account {
+			continue
+		}
+		if integration != "" && row["integration"] != integration {
+			continue
+		}
+		cost, ok := row["cost_usd"].(float64)
+		if ok {
+			total += cost
+		}
+	}
+	if total == 0 {
+		return 0, fmt.Errorf("invoice CSV had no matching spend")
+	}
+	return total, nil
+}
+
 func parseDate(value string) (time.Time, error) {
 	parsed, err := time.Parse("2006-01-02", value)
 	if err != nil {
@@ -288,6 +359,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  miser audit [--explain] [--json] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser analyze [--json] [--routes routes.yaml] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser plan [--json] [--out miser-plan.yaml] [--account id] [--integration name] logs.jsonl")
+	fmt.Fprintln(os.Stderr, "  miser reconcile [--actual-spend usd | --invoice-csv invoice.csv] --out actual_usage.jsonl [--account id] [--integration name] usage.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser import ccusage ccusage.json --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser import invoice-csv invoice.csv --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser pull openai --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration codex]")
