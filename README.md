@@ -37,6 +37,7 @@ A more realistic target:
 - finds obvious waste buckets
 - prints an audit summary
 - explains why each bucket was flagged
+- writes executable savings plans
 - generates route suggestions for repeated call clusters
 
 ## Install
@@ -122,6 +123,38 @@ Route config:
 ```bash
 bin/miser analyze --routes work/routes.yaml examples/llm_calls.jsonl
 ```
+
+## Plan
+
+`plan` turns audit findings into an executable savings plan. This is the part that makes Miser more than a spend dashboard.
+
+```bash
+bin/miser plan --out miser-plan.yaml logs.jsonl
+```
+
+Example:
+
+```yaml
+workflow: "coding_agent_context_replay"
+finding: "Coding-agent context replay"
+current_monthly_cost: 20.84
+estimated_savings: 5.21
+recommended_fixes:
+  - "bounded_context"
+  - "repo_handoff"
+  - "folded_tool_outputs"
+  - "prefix_cache_discipline"
+quality_guard: "replay_eval >= 0.95"
+fallback: "current_model"
+rollback: "keep current route behind a feature flag"
+competitor_overlap:
+  - "inferoa"
+  - "headroom"
+  - "codemap"
+miser_difference: "bill-backed savings receipt plus executable policy"
+```
+
+The point is to show what to change, how much it should save, and how to protect quality before deploying it.
 
 ## Accounts And Integrations
 
