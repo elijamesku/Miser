@@ -84,17 +84,43 @@ func (c *LLMCall) UnmarshalJSON(data []byte) error {
 
 func (c *LLMCall) applyPublishedPricing() {
 	source, _ := c.Metadata["source"].(string)
-	if source != "openai_usage_api" {
+	if !shouldApplyPublishedPricing(*c, source) {
 		return
 	}
-	cachedInputTokens := intFromAny(c.Metadata["input_cached_tokens"])
-	cost, ok := estimateOpenAICostUSD(c.Model, c.InputTokens, c.OutputTokens, cachedInputTokens)
+	cachedInputTokens := firstMetadataInt(c.Metadata, "input_cached_tokens", "cache_read_tokens", "cache_read_input_tokens")
+	cost, pricing, ok := PriceTokenUsage(c.Provider, c.Model, c.InputTokens, c.OutputTokens, cachedInputTokens)
 	if !ok {
+		if source == "openai_usage_api" || source == "ccusage" {
+			c.CostBasis = "unpriced_token_usage"
+			c.CostUSD = 0
+			c.Metadata["pricing_source"] = "none"
+		}
 		return
 	}
 	c.CostUSD = cost
 	c.CostBasis = "published_token_price"
-	c.Metadata["pricing_source"] = "openai_public_pricing"
+	c.Metadata["pricing_source"] = pricing.Source
+	c.Metadata["priced_provider"] = pricing.Provider
+}
+
+func shouldApplyPublishedPricing(call LLMCall, source string) bool {
+	if call.InputTokens == 0 && call.OutputTokens == 0 {
+		return false
+	}
+	switch source {
+	case "openai_usage_api", "ccusage":
+		return true
+	}
+	return call.CostBasis == "estimated_token_cost"
+}
+
+func firstMetadataInt(metadata map[string]interface{}, keys ...string) int {
+	for _, key := range keys {
+		if value := intFromAny(metadata[key]); value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func (c LLMCall) TotalTokens() int {

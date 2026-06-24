@@ -31,6 +31,7 @@ A more realistic target:
 - imports `ccusage` JSON
 - imports invoice/billing CSV rows for actual spend
 - separates `actual_invoice` from `estimated_token_cost`
+- prices known OpenAI and Claude token usage from published model prices
 - filters by account and integration
 - fingerprints similar prompts
 - finds obvious waste buckets
@@ -145,12 +146,17 @@ The important field is `cost_basis`:
 - `actual_invoice`: actual money from a billing export or invoice
 - `reported_log_cost`: cost reported by request logs
 - `estimated_token_cost`: estimated token/API value, not your actual invoice
+- `published_token_price`: token usage priced from a known model catalog
+- `unpriced_token_usage`: token usage for a model Miser does not know yet
+
+Miser prices known GPT and Claude model rows dynamically from the provider/model name. Unknown models stay unpriced so the audit does not invent fake spend.
 
 ## Import ccusage
 
 Miser can use `ccusage` output as input. This is useful for Claude Code, Codex, and other coding-agent usage.
 
 Important: `ccusage` is treated as `estimated_token_cost`. It is not proof of what you paid.
+If the row has a known Claude model, Miser will reprice it with published token pricing during audit.
 
 ```bash
 npx ccusage@latest daily --json > ccusage.json
