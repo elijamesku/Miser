@@ -158,6 +158,7 @@ func runReconcile(args []string) error {
 	out := fs.String("out", "", "write reconciled usage rows to JSONL")
 	account := fs.String("account", "", "only reconcile one account_id")
 	integration := fs.String("integration", "", "only reconcile one integration")
+	args = reorderReconcileArgs(args)
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
@@ -194,6 +195,33 @@ func runReconcile(args []string) error {
 	}
 	fmt.Printf("Reconciled %d usage rows to actual invoice spend $%.2f into %s\n", len(rows), total, *out)
 	return nil
+}
+
+func reorderReconcileArgs(args []string) []string {
+	var flags []string
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if len(arg) > 0 && arg[0] == '-' {
+			flags = append(flags, arg)
+			if !hasInlineFlagValue(arg) && i+1 < len(args) && len(args[i+1]) > 0 && args[i+1][0] != '-' {
+				flags = append(flags, args[i+1])
+				i++
+			}
+			continue
+		}
+		positional = append(positional, arg)
+	}
+	return append(flags, positional...)
+}
+
+func hasInlineFlagValue(arg string) bool {
+	for _, ch := range arg {
+		if ch == '=' {
+			return true
+		}
+	}
+	return false
 }
 
 func runImport(args []string) error {
