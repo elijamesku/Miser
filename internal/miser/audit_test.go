@@ -102,6 +102,26 @@ func TestCostBasisUsesActualInvoice(t *testing.T) {
 	}
 }
 
+func TestCostBasisUsesActualInvoiceAllocated(t *testing.T) {
+	report := Audit([]LLMCall{
+		{
+			ID:          "openai_usage_1",
+			Timestamp:   time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			Workflow:    "openai_api_usage",
+			Provider:    "openai",
+			Model:       "gpt-5.5",
+			CostUSD:     10,
+			AccountID:   "openai-personal",
+			Integration: "codex",
+			CostBasis:   "actual_invoice_allocated",
+			Metadata:    map[string]interface{}{},
+		},
+	})
+	if report.CostBasis != "actual invoice allocated to usage" {
+		t.Fatalf("unexpected cost basis: %q", report.CostBasis)
+	}
+}
+
 func TestCostBasisUsesProviderBillingAPI(t *testing.T) {
 	report := Audit([]LLMCall{
 		{
@@ -218,6 +238,20 @@ func TestOpenAIUsageUnmarshalAppliesPublishedPricing(t *testing.T) {
 	}
 }
 
+func TestActualInvoiceAllocatedRowsAreNotRepriced(t *testing.T) {
+	raw := []byte(`{"account_id":"openai-personal","actual_invoice_total_usd":10,"cost_basis":"actual_invoice_allocated","cost_usd":4.25,"id":"openai_usage_0001","input_cached_tokens":17386752,"input_tokens":17794923,"integration":"codex","model":"gpt-5.5","output_tokens":50472,"prompt":"OpenAI API usage model=gpt-5.5","provider":"openai","source":"openai_usage_api","timestamp":"2026-06-03T00:00:00Z","workflow":"openai_api_usage"}`)
+	var call LLMCall
+	if err := call.UnmarshalJSON(raw); err != nil {
+		t.Fatal(err)
+	}
+	if call.CostBasis != "actual_invoice_allocated" {
+		t.Fatalf("unexpected cost basis: %s", call.CostBasis)
+	}
+	if fmt.Sprintf("%.2f", call.CostUSD) != "4.25" {
+		t.Fatalf("unexpected cost: %.6f", call.CostUSD)
+	}
+}
+
 func TestClaudeModelPricingUsesProviderCatalog(t *testing.T) {
 	cost, pricing, ok := PriceTokenUsage("anthropic", "claude-sonnet-4-5", 1000000, 1000000, 0)
 	if !ok {
@@ -292,6 +326,53 @@ func TestPlanTurnsAuditFindingIntoExecutablePolicy(t *testing.T) {
 	rendered := RenderPlanYAML(plan)
 	if !strings.Contains(rendered, "bounded_context") || !strings.Contains(rendered, "competitor_overlap") || !strings.Contains(rendered, "miser_difference") {
 		t.Fatalf("missing executable plan details:\n%s", rendered)
+	}
+}
+
+func TestReconcileToActualSpendScalesUsageRows(t *testing.T) {
+	rows, err := ReconcileToActualSpend([]LLMCall{
+		{
+			ID:           "usage_1",
+			Timestamp:    time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			Workflow:     "openai_api_usage",
+			Provider:     "openai",
+			Model:        "gpt-5.5",
+			InputTokens:  100,
+			OutputTokens: 10,
+			CostUSD:      20,
+			AccountID:    "openai-personal",
+			Integration:  "codex",
+			CostBasis:    "published_token_price",
+			Metadata: map[string]interface{}{
+				"source": "openai_usage_api",
+			},
+		},
+		{
+			ID:           "usage_2",
+			Timestamp:    time.Date(2026, 6, 2, 0, 0, 0, 0, time.UTC),
+			Workflow:     "openai_api_usage",
+			Provider:     "openai",
+			Model:        "gpt-5.5",
+			InputTokens:  100,
+			OutputTokens: 10,
+			CostUSD:      5,
+			AccountID:    "openai-personal",
+			Integration:  "codex",
+			CostBasis:    "published_token_price",
+			Metadata:     map[string]interface{}{},
+		},
+	}, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected two rows, got %d", len(rows))
+	}
+	if fmt.Sprintf("%.2f", rows[0]["cost_usd"]) != "8.00" || fmt.Sprintf("%.2f", rows[1]["cost_usd"]) != "2.00" {
+		t.Fatalf("unexpected allocated costs: %#v", rows)
+	}
+	if rows[0]["cost_basis"] != "actual_invoice_allocated" || rows[0]["actual_invoice_total_usd"] != float64(10) {
+		t.Fatalf("missing actual invoice allocation metadata: %#v", rows[0])
 	}
 }
 
