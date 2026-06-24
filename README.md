@@ -38,6 +38,7 @@ A more realistic target:
 - prints an audit summary
 - explains why each bucket was flagged
 - writes executable savings plans
+- reconciles token usage to an actual invoice total
 - generates route suggestions for repeated call clusters
 
 ## Install
@@ -181,6 +182,7 @@ The important field is `cost_basis`:
 - `estimated_token_cost`: estimated token/API value, not your actual invoice
 - `published_token_price`: token usage priced from a known model catalog
 - `unpriced_token_usage`: token usage for a model Miser does not know yet
+- `actual_invoice_allocated`: actual invoice dollars allocated across usage rows
 
 Miser prices known GPT and Claude model rows dynamically from the provider/model name. Unknown models stay unpriced so the audit does not invent fake spend.
 
@@ -270,7 +272,25 @@ Usage rows use:
 Cost basis: estimated token cost, not your actual invoice
 ```
 
-That means the audit is useful for finding waste, but it is not a receipt.
+That means the audit is useful for finding waste, but it is not a receipt. To use your real invoice amount, reconcile usage to the actual charge first:
+
+```bash
+bin/miser reconcile work/openai_usage.jsonl --actual-spend 10.00 --out work/openai_actual_usage.jsonl --account openai-personal --integration codex
+bin/miser audit --explain --account openai-personal --integration codex work/openai_actual_usage.jsonl
+bin/miser plan --out miser-plan.yaml --account openai-personal --integration codex work/openai_actual_usage.jsonl
+```
+
+Or use an invoice CSV:
+
+```bash
+bin/miser reconcile work/openai_usage.jsonl --invoice-csv invoice.csv --out work/openai_actual_usage.jsonl --account openai-personal --integration codex
+```
+
+Reconciled rows use:
+
+```text
+Cost basis: actual invoice allocated to usage
+```
 
 Claude billing pull is not automatic yet. Use `invoice-csv` for Claude until there is a supported Claude billing API for your account type.
 
