@@ -182,6 +182,19 @@ For coding-agent context replay, Miser emits concrete controls like:
 
 This is where Miser starts becoming policy-as-code instead of just a report.
 
+Apply the rule pack to generate integration files:
+
+```bash
+bin/miser apply --target codex .miser/agent-rules.yaml
+```
+
+That writes:
+
+- `.miser/codex-policy.md`
+- `.miser/session-handoff-template.md`
+- `.miser/replay-eval-checklist.md`
+- `.miser/context-replay-metrics.json`
+
 ## Accounts And Integrations
 
 Miser needs to know what it is measuring.
