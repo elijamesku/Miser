@@ -22,6 +22,8 @@ func main() {
 		err = runAudit(os.Args[2:])
 	case "analyze":
 		err = runAnalyze(os.Args[2:])
+	case "plan":
+		err = runPlan(os.Args[2:])
 	case "import":
 		err = runImport(os.Args[2:])
 	case "pull":
@@ -106,6 +108,44 @@ func runAnalyze(args []string) error {
 	if *routesPath != "" {
 		return os.WriteFile(*routesPath, []byte(miser.RenderRoutes(receipts)), 0o644)
 	}
+	return nil
+}
+
+func runPlan(args []string) error {
+	fs := flag.NewFlagSet("plan", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON")
+	outPath := fs.String("out", "", "write executable savings plan YAML")
+	account := fs.String("account", "", "only plan for one account_id")
+	integration := fs.String("integration", "", "only plan for one integration")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: miser plan [--json] [--out miser-plan.yaml] [--account id] [--integration name] logs.jsonl")
+	}
+
+	calls, err := miser.LoadJSONL(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	calls = miser.FilterCalls(calls, miser.FilterConfig{AccountID: *account, Integration: *integration})
+	plan := miser.Plan(calls)
+	if *jsonOut {
+		encoded, err := json.MarshalIndent(plan, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(encoded))
+		return nil
+	}
+	if *outPath != "" {
+		if err := os.WriteFile(*outPath, []byte(miser.RenderPlanYAML(plan)), 0o644); err != nil {
+			return err
+		}
+		fmt.Printf("Wrote savings plan to %s\n", *outPath)
+		return nil
+	}
+	fmt.Print(miser.RenderPlan(plan))
 	return nil
 }
 
@@ -247,6 +287,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "usage:")
 	fmt.Fprintln(os.Stderr, "  miser audit [--explain] [--json] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser analyze [--json] [--routes routes.yaml] [--account id] [--integration name] logs.jsonl")
+	fmt.Fprintln(os.Stderr, "  miser plan [--json] [--out miser-plan.yaml] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser import ccusage ccusage.json --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser import invoice-csv invoice.csv --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser pull openai --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration codex]")
