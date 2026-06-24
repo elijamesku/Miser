@@ -27,6 +27,8 @@ func main() {
 		err = runPlan(os.Args[2:])
 	case "rules":
 		err = runRules(os.Args[2:])
+	case "apply":
+		err = runApply(os.Args[2:])
 	case "reconcile":
 		err = runReconcile(os.Args[2:])
 	case "import":
@@ -198,6 +200,48 @@ func runRules(args []string) error {
 	if *outPath == "" && *instructionsPath == "" {
 		fmt.Print(miser.RenderRulesYAML(pack))
 	}
+	return nil
+}
+
+func runApply(args []string) error {
+	fs := flag.NewFlagSet("apply", flag.ContinueOnError)
+	target := fs.String("target", "", "agent target: generic, codex, or claude")
+	outDir := fs.String("out-dir", "", "directory for generated integration files")
+	jsonOut := fs.Bool("json", false, "emit generated file list as JSON")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: miser apply [--target generic|codex|claude] [--out-dir .miser] rules.yaml")
+	}
+
+	rulesPath := fs.Arg(0)
+	raw, err := os.ReadFile(rulesPath)
+	if err != nil {
+		return err
+	}
+	outputDir := *outDir
+	if outputDir == "" {
+		outputDir = filepath.Dir(rulesPath)
+		if outputDir == "." || outputDir == "" {
+			outputDir = ".miser"
+		}
+	}
+	files := miser.ApplyRules(raw, *target, outputDir)
+	if *jsonOut {
+		encoded, err := json.MarshalIndent(files, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(encoded))
+		return nil
+	}
+	for _, file := range files {
+		if err := writeTextFile(file.Path, file.Content); err != nil {
+			return err
+		}
+	}
+	fmt.Print(miser.RenderApplySummary(files))
 	return nil
 }
 
@@ -438,6 +482,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  miser analyze [--json] [--routes routes.yaml] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser plan [--json] [--out miser-plan.yaml] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser rules [--json] [--out rules.yaml] [--instructions AGENT_RULES.md] [--target generic|codex|claude] [--account id] [--integration name] logs.jsonl")
+	fmt.Fprintln(os.Stderr, "  miser apply [--target generic|codex|claude] [--out-dir .miser] rules.yaml")
 	fmt.Fprintln(os.Stderr, "  miser reconcile [--actual-spend usd | --invoice-csv invoice.csv] --out actual_usage.jsonl [--account id] [--integration name] usage.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser import ccusage ccusage.json --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser import invoice-csv invoice.csv --out logs.jsonl [--account id] [--integration claude|codex]")
