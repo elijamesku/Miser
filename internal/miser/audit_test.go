@@ -435,6 +435,40 @@ rules:
 	}
 }
 
+func TestRenderPreviewHTMLIncludesAuditAndRules(t *testing.T) {
+	html := RenderPreviewHTML([]LLMCall{
+		{
+			ID:           "openai_usage_1",
+			Timestamp:    time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			Workflow:     "openai_api_usage",
+			Provider:     "openai",
+			Model:        "gpt-5.5",
+			Prompt:       "OpenAI API usage model=gpt-5.5",
+			InputTokens:  100000,
+			OutputTokens: 100,
+			CostUSD:      10,
+			AccountID:    "openai-personal",
+			Integration:  "codex",
+			CostBasis:    "actual_invoice_allocated",
+			Metadata: map[string]interface{}{
+				"source":              "openai_usage_api",
+				"input_cached_tokens": float64(90000),
+			},
+		},
+	}, "openai-personal", "codex")
+	for _, want := range []string{
+		"Miser Preview",
+		"Monthly spend analyzed",
+		"$10.00",
+		"actual invoice allocated to usage",
+		"miser.coding_agent_context_replay.v1",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("preview missing %q:\n%s", want, html)
+		}
+	}
+}
+
 func TestReconcileToActualSpendScalesUsageRows(t *testing.T) {
 	rows, err := ReconcileToActualSpend([]LLMCall{
 		{
