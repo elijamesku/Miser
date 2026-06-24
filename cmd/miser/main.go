@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/elijamesku/Miser/internal/miser"
@@ -24,6 +25,8 @@ func main() {
 		err = runAnalyze(os.Args[2:])
 	case "plan":
 		err = runPlan(os.Args[2:])
+	case "rules":
+		err = runRules(os.Args[2:])
 	case "reconcile":
 		err = runReconcile(os.Args[2:])
 	case "import":
@@ -148,6 +151,53 @@ func runPlan(args []string) error {
 		return nil
 	}
 	fmt.Print(miser.RenderPlan(plan))
+	return nil
+}
+
+func runRules(args []string) error {
+	fs := flag.NewFlagSet("rules", flag.ContinueOnError)
+	jsonOut := fs.Bool("json", false, "emit machine-readable JSON")
+	outPath := fs.String("out", "", "write agent rule pack YAML")
+	instructionsPath := fs.String("instructions", "", "write human-readable agent instructions")
+	target := fs.String("target", "generic", "agent target: generic, codex, or claude")
+	account := fs.String("account", "", "only generate rules for one account_id")
+	integration := fs.String("integration", "", "only generate rules for one integration")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: miser rules [--json] [--out rules.yaml] [--instructions AGENT_RULES.md] [--target generic|codex|claude] [--account id] [--integration name] logs.jsonl")
+	}
+
+	calls, err := miser.LoadJSONL(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	calls = miser.FilterCalls(calls, miser.FilterConfig{AccountID: *account, Integration: *integration})
+	pack := miser.Rules(calls, *target)
+	if *jsonOut {
+		encoded, err := json.MarshalIndent(pack, "", "  ")
+		if err != nil {
+			return err
+		}
+		fmt.Println(string(encoded))
+		return nil
+	}
+	if *outPath != "" {
+		if err := writeTextFile(*outPath, miser.RenderRulesYAML(pack)); err != nil {
+			return err
+		}
+		fmt.Printf("Wrote agent rule pack to %s\n", *outPath)
+	}
+	if *instructionsPath != "" {
+		if err := writeTextFile(*instructionsPath, miser.RenderAgentInstructions(pack)); err != nil {
+			return err
+		}
+		fmt.Printf("Wrote agent instructions to %s\n", *instructionsPath)
+	}
+	if *outPath == "" && *instructionsPath == "" {
+		fmt.Print(miser.RenderRulesYAML(pack))
+	}
 	return nil
 }
 
@@ -387,11 +437,22 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  miser audit [--explain] [--json] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser analyze [--json] [--routes routes.yaml] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser plan [--json] [--out miser-plan.yaml] [--account id] [--integration name] logs.jsonl")
+	fmt.Fprintln(os.Stderr, "  miser rules [--json] [--out rules.yaml] [--instructions AGENT_RULES.md] [--target generic|codex|claude] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser reconcile [--actual-spend usd | --invoice-csv invoice.csv] --out actual_usage.jsonl [--account id] [--integration name] usage.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser import ccusage ccusage.json --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser import invoice-csv invoice.csv --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser pull openai --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration codex]")
 	fmt.Fprintln(os.Stderr, "  miser pull openai-usage --from YYYY-MM-DD --to YYYY-MM-DD --out logs.jsonl [--account id] [--integration codex]")
+}
+
+func writeTextFile(path, content string) error {
+	dir := filepath.Dir(path)
+	if dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(path, []byte(content), 0o644)
 }
 
 func defaultString(value, fallback string) string {
