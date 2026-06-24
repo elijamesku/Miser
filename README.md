@@ -38,6 +38,7 @@ A more realistic target:
 - prints an audit summary
 - explains why each bucket was flagged
 - writes executable savings plans
+- writes agent rule packs and instructions
 - reconciles token usage to an actual invoice total
 - generates route suggestions for repeated call clusters
 
@@ -156,6 +157,30 @@ miser_difference: "bill-backed savings receipt plus executable policy"
 ```
 
 The point is to show what to change, how much it should save, and how to protect quality before deploying it.
+
+## Rules
+
+`rules` turns the savings plan into policy a team can review and enforce.
+
+```bash
+bin/miser rules \
+  --target codex \
+  --out .miser/agent-rules.yaml \
+  --instructions .miser/AGENT_RULES.md \
+  logs.jsonl
+```
+
+For coding-agent context replay, Miser emits concrete controls like:
+
+- max context files
+- max replayed prompt tokens
+- max tool output lines
+- session handoff timing
+- quality guard
+- fallback and rollback
+- metrics to track realized savings against actual invoice dollars
+
+This is where Miser starts becoming policy-as-code instead of just a report.
 
 ## Accounts And Integrations
 
