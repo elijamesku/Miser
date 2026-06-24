@@ -332,6 +332,32 @@ Cost basis: actual invoice allocated to usage
 
 Claude billing pull is not automatic yet. Use `invoice-csv` for Claude until there is a supported Claude billing API for your account type.
 
+## Live Proxy
+
+`audit` looks backward at logs. `proxy` sits in the request path.
+
+Run an OpenAI-compatible proxy:
+
+```bash
+miser proxy \
+  --provider openai \
+  --addr 127.0.0.1:8788 \
+  --account openai-personal \
+  --integration codex \
+  --log .miser/proxy-logs.jsonl \
+  --cache .miser/exact-cache.json
+```
+
+Then point an OpenAI-compatible client at:
+
+```text
+http://127.0.0.1:8788/v1
+```
+
+The proxy forwards requests to OpenAI, logs each intercepted call, prices usage from response token counts when available, and exact-caches identical non-streaming chat/responses requests. Cache hits return before the provider call and are logged with `cost_basis: miser_exact_cache`.
+
+For privacy, full prompt text is not stored by default. Use `--store-prompts` only when you are testing locally or have permission to keep prompt text in logs.
+
 ## Log Format
 
 Miser expects newline-delimited JSON:

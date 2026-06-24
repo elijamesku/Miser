@@ -32,6 +32,8 @@ func main() {
 		err = runApply(os.Args[2:])
 	case "preview":
 		err = runPreview(os.Args[2:])
+	case "proxy":
+		err = runProxy(os.Args[2:])
 	case "reconcile":
 		err = runReconcile(os.Args[2:])
 	case "import":
@@ -288,6 +290,40 @@ func runPreview(args []string) error {
 	return http.ListenAndServe(*addr, mux)
 }
 
+func runProxy(args []string) error {
+	fs := flag.NewFlagSet("proxy", flag.ContinueOnError)
+	provider := fs.String("provider", "openai", "provider to proxy: openai or anthropic")
+	addr := fs.String("addr", "127.0.0.1:8788", "address for the local interception proxy")
+	upstream := fs.String("upstream", "", "provider upstream URL")
+	apiKeyEnv := fs.String("api-key-env", "OPENAI_API_KEY", "environment variable containing provider API key")
+	logPath := fs.String("log", ".miser/proxy-logs.jsonl", "append intercepted calls to this JSONL file")
+	cachePath := fs.String("cache", ".miser/exact-cache.json", "persistent exact response cache; empty disables cache")
+	account := fs.String("account", "", "account_id to attach to intercepted rows")
+	integration := fs.String("integration", "", "integration name to attach to intercepted rows")
+	storePrompts := fs.Bool("store-prompts", false, "store full prompt text in proxy logs")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 0 {
+		return fmt.Errorf("usage: miser proxy [--provider openai|anthropic] [--addr 127.0.0.1:8788] [--upstream url] [--api-key-env OPENAI_API_KEY] [--log .miser/proxy-logs.jsonl] [--cache .miser/exact-cache.json] [--account id] [--integration name] [--store-prompts]")
+	}
+	apiKey := os.Getenv(*apiKeyEnv)
+	if apiKey == "" {
+		return fmt.Errorf("missing API key in %s", *apiKeyEnv)
+	}
+	return miser.ServeProxy(miser.ProxyOptions{
+		Addr:         *addr,
+		Provider:     *provider,
+		Upstream:     *upstream,
+		APIKey:       apiKey,
+		LogPath:      *logPath,
+		CachePath:    *cachePath,
+		AccountID:    *account,
+		Integration:  *integration,
+		StorePrompts: *storePrompts,
+	})
+}
+
 func runReconcile(args []string) error {
 	fs := flag.NewFlagSet("reconcile", flag.ContinueOnError)
 	actualSpend := fs.Float64("actual-spend", 0, "actual invoice spend to allocate across usage rows")
@@ -527,6 +563,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  miser rules [--json] [--out rules.yaml] [--instructions AGENT_RULES.md] [--target generic|codex|claude] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser apply [--target generic|codex|claude] [--out-dir .miser] rules.yaml")
 	fmt.Fprintln(os.Stderr, "  miser preview [--addr 127.0.0.1:8787] [--out preview.html] [--account id] [--integration name] logs.jsonl")
+	fmt.Fprintln(os.Stderr, "  miser proxy [--provider openai|anthropic] [--addr 127.0.0.1:8788] [--log .miser/proxy-logs.jsonl] [--cache .miser/exact-cache.json] [--account id] [--integration name]")
 	fmt.Fprintln(os.Stderr, "  miser reconcile [--actual-spend usd | --invoice-csv invoice.csv] --out actual_usage.jsonl [--account id] [--integration name] usage.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser import ccusage ccusage.json --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser import invoice-csv invoice.csv --out logs.jsonl [--account id] [--integration claude|codex]")

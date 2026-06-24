@@ -2,6 +2,10 @@ package miser
 
 import (
 	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -466,6 +470,80 @@ func TestRenderPreviewHTMLIncludesAuditAndRules(t *testing.T) {
 		if !strings.Contains(html, want) {
 			t.Fatalf("preview missing %q:\n%s", want, html)
 		}
+	}
+}
+
+func TestProxyLogsAndExactCachesOpenAIRequests(t *testing.T) {
+	upstreamCalls := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		if r.Header.Get("Authorization") != "Bearer test-key" {
+			t.Fatalf("missing upstream authorization header: %q", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"chatcmpl_test","model":"gpt-4o-mini","choices":[{"message":{"role":"assistant","content":"cached answer"}}],"usage":{"prompt_tokens":1000,"completion_tokens":100,"prompt_tokens_details":{"cached_tokens":400}}}`)
+	}))
+	defer upstream.Close()
+
+	dir := t.TempDir()
+	server, err := NewProxyServer(ProxyOptions{
+		Provider:    "openai",
+		Upstream:    upstream.URL,
+		APIKey:      "test-key",
+		LogPath:     filepath.Join(dir, "proxy-logs.jsonl"),
+		CachePath:   filepath.Join(dir, "exact-cache.json"),
+		AccountID:   "openai-personal",
+		Integration: "codex",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close()
+	proxy := httptest.NewServer(server.Handler())
+	defer proxy.Close()
+
+	body := strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Classify ticket 123"}]}`)
+	resp, err := http.Post(proxy.URL+"/v1/chat/completions", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Header.Get("X-Miser-Cache") != "MISS" {
+		t.Fatalf("expected cache miss, got %q", resp.Header.Get("X-Miser-Cache"))
+	}
+	_ = resp.Body.Close()
+
+	body = strings.NewReader(`{"model":"gpt-4o-mini","messages":[{"role":"user","content":"Classify ticket 123"}]}`)
+	resp, err = http.Post(proxy.URL+"/v1/chat/completions", "application/json", body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp.Header.Get("X-Miser-Cache") != "HIT" {
+		t.Fatalf("expected cache hit, got %q", resp.Header.Get("X-Miser-Cache"))
+	}
+	_ = resp.Body.Close()
+	if upstreamCalls != 1 {
+		t.Fatalf("expected one upstream call, got %d", upstreamCalls)
+	}
+
+	logged, err := LoadJSONL(filepath.Join(dir, "proxy-logs.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(logged) != 2 {
+		t.Fatalf("expected two logged calls, got %d", len(logged))
+	}
+	if logged[0].CostBasis != "published_token_price" || logged[0].CostUSD <= 0 {
+		t.Fatalf("expected priced upstream call, got %#v", logged[0])
+	}
+	if logged[1].CostBasis != "miser_exact_cache" || logged[1].CostUSD != 0 {
+		t.Fatalf("expected free cache hit, got %#v", logged[1])
+	}
+	rawLog, err := os.ReadFile(filepath.Join(dir, "proxy-logs.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(rawLog), `"miser_intercepted":true`) || !strings.Contains(string(rawLog), `"cache_status":"hit"`) {
+		t.Fatalf("missing proxy metadata:\n%s", string(rawLog))
 	}
 }
 
