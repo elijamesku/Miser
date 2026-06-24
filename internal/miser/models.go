@@ -107,6 +107,10 @@ func shouldApplyPublishedPricing(call LLMCall, source string) bool {
 	if call.InputTokens == 0 && call.OutputTokens == 0 {
 		return false
 	}
+	switch call.CostBasis {
+	case "actual_invoice", "actual_invoice_allocated", "provider_billing_api":
+		return false
+	}
 	switch source {
 	case "openai_usage_api", "ccusage":
 		return true
