@@ -377,6 +377,9 @@ func costBasis(calls []LLMCall) string {
 		if bases["actual_invoice"] {
 			return "actual invoice/billing export"
 		}
+		if bases["actual_invoice_allocated"] {
+			return "actual invoice allocated to usage"
+		}
 		if bases["provider_billing_api"] {
 			return "provider billing API"
 		}
