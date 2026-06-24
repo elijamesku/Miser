@@ -329,6 +329,76 @@ func TestPlanTurnsAuditFindingIntoExecutablePolicy(t *testing.T) {
 	}
 }
 
+func TestRulesGenerateCodexContextReplayPolicy(t *testing.T) {
+	pack := Rules([]LLMCall{
+		{
+			ID:           "openai_usage_1",
+			Timestamp:    time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
+			Workflow:     "openai_api_usage",
+			Provider:     "openai",
+			Model:        "gpt-5.5",
+			Prompt:       "OpenAI API usage model=gpt-5.5",
+			InputTokens:  100000,
+			OutputTokens: 100,
+			CostUSD:      10,
+			AccountID:    "openai-personal",
+			Integration:  "codex",
+			CostBasis:    "actual_invoice_allocated",
+			Metadata: map[string]interface{}{
+				"source":              "openai_usage_api",
+				"input_cached_tokens": float64(90000),
+			},
+		},
+	}, "codex")
+	if pack.Target != "codex" || len(pack.Rules) != 1 {
+		t.Fatalf("unexpected rule pack: %#v", pack)
+	}
+	rule := pack.Rules[0]
+	if rule.ID != "miser.coding_agent_context_replay.v1" {
+		t.Fatalf("unexpected rule id: %s", rule.ID)
+	}
+	if rule.Limits["max_tool_output_lines"] != "200" || rule.Limits["max_replayed_prompt_tokens"] != "8000" {
+		t.Fatalf("missing concrete limits: %#v", rule.Limits)
+	}
+	if !strings.Contains(strings.Join(rule.Enforcement, "\n"), "For Codex") {
+		t.Fatalf("missing Codex-specific enforcement: %#v", rule.Enforcement)
+	}
+	rendered := RenderRulesYAML(pack)
+	if !strings.Contains(rendered, "policy-as-code") || !strings.Contains(rendered, "cached_input_tokens/input_tokens") {
+		t.Fatalf("unexpected rendered rules:\n%s", rendered)
+	}
+}
+
+func TestRenderAgentInstructions(t *testing.T) {
+	pack := AgentRulePack{
+		Version:                 "miser.rules/v1",
+		Target:                  "codex",
+		MonthlySpendAnalyzed:    10,
+		CostBasis:               "actual invoice allocated to usage",
+		EstimatedAvoidableSpend: 2.5,
+		Rules: []AgentRule{
+			{
+				ID:                     "miser.coding_agent_context_replay.v1",
+				Finding:                "Coding-agent context replay",
+				Trigger:                "cached_input_tokens/input_tokens >= 0.50",
+				ExpectedMonthlySavings: 2.5,
+				SavingsRate:            0.25,
+				Limits: map[string]string{
+					"max_context_files": "12",
+				},
+				Enforcement:  []string{"Start from a short repo/session summary."},
+				QualityGuard: "replay_eval >= 0.95",
+				Fallback:     "current_model",
+				Rollback:     "keep current route behind a feature flag",
+			},
+		},
+	}
+	rendered := RenderAgentInstructions(pack)
+	if !strings.Contains(rendered, "# Miser Agent Rules") || !strings.Contains(rendered, "Start from a short repo/session summary.") {
+		t.Fatalf("unexpected instructions:\n%s", rendered)
+	}
+}
+
 func TestReconcileToActualSpendScalesUsageRows(t *testing.T) {
 	rows, err := ReconcileToActualSpend([]LLMCall{
 		{
