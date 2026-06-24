@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -29,6 +30,8 @@ func main() {
 		err = runRules(os.Args[2:])
 	case "apply":
 		err = runApply(os.Args[2:])
+	case "preview":
+		err = runPreview(os.Args[2:])
 	case "reconcile":
 		err = runReconcile(os.Args[2:])
 	case "import":
@@ -243,6 +246,46 @@ func runApply(args []string) error {
 	}
 	fmt.Print(miser.RenderApplySummary(files))
 	return nil
+}
+
+func runPreview(args []string) error {
+	fs := flag.NewFlagSet("preview", flag.ContinueOnError)
+	account := fs.String("account", "", "only preview one account_id")
+	integration := fs.String("integration", "", "only preview one integration")
+	addr := fs.String("addr", "127.0.0.1:8787", "address for the local web preview")
+	outPath := fs.String("out", "", "write static HTML instead of serving")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if fs.NArg() != 1 {
+		return fmt.Errorf("usage: miser preview [--addr 127.0.0.1:8787] [--out preview.html] [--account id] [--integration name] logs.jsonl")
+	}
+
+	calls, err := miser.LoadJSONL(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	calls = miser.FilterCalls(calls, miser.FilterConfig{AccountID: *account, Integration: *integration})
+	html := miser.RenderPreviewHTML(calls, *account, *integration)
+	if *outPath != "" {
+		if err := writeTextFile(*outPath, html); err != nil {
+			return err
+		}
+		fmt.Printf("Wrote web preview to %s\n", *outPath)
+		return nil
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprint(w, html)
+	})
+	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		fmt.Fprintln(w, "ok")
+	})
+	fmt.Printf("Miser web preview: http://%s\n", *addr)
+	return http.ListenAndServe(*addr, mux)
 }
 
 func runReconcile(args []string) error {
@@ -483,6 +526,7 @@ func usage() {
 	fmt.Fprintln(os.Stderr, "  miser plan [--json] [--out miser-plan.yaml] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser rules [--json] [--out rules.yaml] [--instructions AGENT_RULES.md] [--target generic|codex|claude] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser apply [--target generic|codex|claude] [--out-dir .miser] rules.yaml")
+	fmt.Fprintln(os.Stderr, "  miser preview [--addr 127.0.0.1:8787] [--out preview.html] [--account id] [--integration name] logs.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser reconcile [--actual-spend usd | --invoice-csv invoice.csv] --out actual_usage.jsonl [--account id] [--integration name] usage.jsonl")
 	fmt.Fprintln(os.Stderr, "  miser import ccusage ccusage.json --out logs.jsonl [--account id] [--integration claude|codex]")
 	fmt.Fprintln(os.Stderr, "  miser import invoice-csv invoice.csv --out logs.jsonl [--account id] [--integration claude|codex]")
