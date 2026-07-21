@@ -1,4 +1,4 @@
-// edit for testing tom
+// validate testing thesis locally
 package main
 
 import (
