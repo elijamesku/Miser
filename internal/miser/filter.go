@@ -1,3 +1,5 @@
+//miser filter - line up docs
+
 package miser
 
 type FilterConfig struct {
