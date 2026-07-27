@@ -1,3 +1,4 @@
+// internal package
 package miser
 
 import (
