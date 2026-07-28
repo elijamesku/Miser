@@ -1,4 +1,5 @@
 // validate testing thesis locally
+// teests ran
 package main
 
 import (
