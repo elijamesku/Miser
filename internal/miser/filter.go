@@ -1,5 +1,5 @@
 //miser filter - line up docs
-// changes have been tested locally
+// update soon
 package miser
 
 type FilterConfig struct {
