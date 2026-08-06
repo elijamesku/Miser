@@ -1,3 +1,5 @@
+//pricing mod
+
 package miser
 
 import "strings"
