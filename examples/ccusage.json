@@ -18,7 +18,8 @@
       "inputTokens": 149000,
       "outputTokens": 21000,
       "cacheReadInputTokens": 64000,
-      "totalCost": 25.87
+      "totalCost": 25.87,
+      "totalCost": 25.22
     }
   ]
 }
