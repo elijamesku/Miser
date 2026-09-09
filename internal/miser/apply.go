@@ -1,4 +1,4 @@
-// test apply artifacts
+// remove apply artifacts
 package miser
 
 import (
