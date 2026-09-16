@@ -1,4 +1,4 @@
-// internal package
+// audit test needed
 package miser
 
 import (
